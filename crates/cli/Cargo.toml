@@ -1,0 +1,13 @@
+[package]
+name = "codex-buddy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "codex-buddy"
+path = "src/main.rs"
+
+[dependencies]
+codex-buddy-core = { workspace = true }
+pico-args = { workspace = true }
