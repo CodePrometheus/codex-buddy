@@ -105,6 +105,11 @@ fn point_switched_replaces_reverse_symlink() {
     fs::create_dir_all(&acct).unwrap();
     fs::write(acct.join("auth.json"), "{}").unwrap();
 
+    // ~/.codex/auth.json is a managed symlink (post-init state); this test focuses on the
+    // account-side reverse symlinks for sessions/history.
+    fs::remove_file(codex.join("auth.json")).unwrap();
+    unixfs::symlink(acct.join("auth.json"), codex.join("auth.json")).unwrap();
+
     // Older layout: the account side holds reverse symlinks back into ~/.codex.
     fs::remove_dir_all(codex.join("sessions")).unwrap();
     unixfs::symlink(codex.join("sessions"), acct.join("sessions")).unwrap();
@@ -125,5 +130,44 @@ fn point_switched_replaces_reverse_symlink() {
     assert_eq!(
         fs::read_link(codex.join("auth.json")).unwrap(),
         acct.join("auth.json")
+    );
+}
+
+#[test]
+fn point_switched_refuses_real_codex_auth() {
+    let d = tempdir().unwrap();
+    let paths = setup(d.path()); // ~/.codex/auth.json is a real file
+    let acct = paths.account_dir("work");
+    fs::create_dir_all(&acct).unwrap();
+    fs::write(acct.join("auth.json"), "{}").unwrap();
+
+    assert!(point_switched_entries(&paths, "work").is_err());
+    // The real ~/.codex/auth.json is left intact, not replaced by a symlink.
+    let m = fs::symlink_metadata(paths.codex_auth()).unwrap();
+    assert!(m.file_type().is_file());
+}
+
+#[test]
+fn point_switched_refuses_real_history_even_when_auth_ok() {
+    let d = tempdir().unwrap();
+    let paths = setup(d.path());
+    let codex = paths.codex_home().to_path_buf();
+    let acct = paths.account_dir("work");
+    fs::create_dir_all(acct.join("sessions")).unwrap();
+    fs::write(acct.join("auth.json"), "{}").unwrap();
+    fs::write(acct.join("history.jsonl"), "acct-hist").unwrap();
+
+    // ~/.codex/{auth,sessions} are valid managed symlinks, but history.jsonl is a real file.
+    fs::remove_file(codex.join("auth.json")).unwrap();
+    unixfs::symlink(acct.join("auth.json"), codex.join("auth.json")).unwrap();
+    fs::remove_dir_all(codex.join("sessions")).unwrap();
+    unixfs::symlink(acct.join("sessions"), codex.join("sessions")).unwrap();
+    fs::write(codex.join("history.jsonl"), "real-history").unwrap();
+
+    assert!(point_switched_entries(&paths, "work").is_err());
+    // The real history file is not clobbered.
+    assert_eq!(
+        fs::read_to_string(codex.join("history.jsonl")).unwrap(),
+        "real-history"
     );
 }

@@ -191,6 +191,12 @@ fn rename_updates_dir_registry_and_active_symlink() {
         fs::read_link(paths.codex_auth()).unwrap(),
         paths.account_auth("primary")
     );
+    for entry in ["sessions", "history.jsonl"] {
+        assert_eq!(
+            fs::read_link(paths.codex_home().join(entry)).unwrap(),
+            paths.account_dir("primary").join(entry)
+        );
+    }
 }
 
 #[test]
@@ -299,4 +305,19 @@ fn account_home_returns_dir() {
     let paths = setup(d.path());
     assert_eq!(account_home(&paths, "b").unwrap(), paths.account_dir("b"));
     assert!(account_home(&paths, "nope").is_err());
+}
+
+#[test]
+fn switch_refuses_real_codex_auth() {
+    let d = tempdir().unwrap();
+    let paths = setup(d.path());
+    // Corrupt state: ~/.codex/auth.json is a real file instead of a managed symlink.
+    fs::remove_file(paths.codex_auth()).unwrap();
+    fs::write(paths.codex_auth(), "real-auth").unwrap();
+
+    assert!(switch(&paths, "b").is_err());
+    // The real file is not clobbered by the repoint.
+    let m = fs::symlink_metadata(paths.codex_auth()).unwrap();
+    assert!(m.file_type().is_file());
+    assert_eq!(fs::read_to_string(paths.codex_auth()).unwrap(), "real-auth");
 }

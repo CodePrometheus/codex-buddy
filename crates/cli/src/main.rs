@@ -24,11 +24,13 @@ fn main() -> ExitCode {
 
 fn run() -> CliResult<i32> {
     let mut args = Arguments::from_env();
-    if args.contains(["-h", "--help"]) {
+    let sub = args.subcommand()?;
+    // `run` passes everything after the alias through to codex verbatim, so a -h/--help there
+    // must reach codex; for every other command a top-level -h/--help prints our help.
+    if sub.as_deref() != Some("run") && args.contains(["-h", "--help"]) {
         print_help();
         return Ok(0);
     }
-    let sub = args.subcommand()?;
     match sub.as_deref() {
         Some("init") => {
             cmd_init(args)?;
@@ -193,8 +195,8 @@ fn cmd_list() -> CliResult<()> {
 
     let width = |vals: &[String], head: &str| {
         vals.iter()
-            .map(String::len)
-            .chain([head.len()])
+            .map(|s| s.chars().count())
+            .chain([head.chars().count()])
             .max()
             .unwrap()
     };

@@ -20,8 +20,34 @@ pub const SWITCHED_ENTRIES: &[&str] = &["auth.json", "sessions", "history.jsonl"
 
 /// Point `~/.codex/{auth.json, sessions, history.jsonl}` at `alias`, creating a missing sessions
 /// dir / history file so no symlink dangles. The account's auth.json must already exist.
+///
+/// Phase 1 validates every ~/.codex entry is safe to repoint (a managed symlink, or absent) before
+/// touching anything, so a real file/dir is never clobbered and a failure can't leave only some
+/// entries repointed. The repoints in phase 2 are each atomic but not atomic as a group: a crash
+/// mid-loop can leave auth.json switched while sessions/history are not. auth.json is the
+/// login-critical entry and is repointed first; `doctor` flags the mismatch and re-running switch
+/// heals it.
 pub fn point_switched_entries(paths: &Paths, alias: &str) -> Result<()> {
     let acct = paths.account_dir(alias);
+
+    // Phase 1: refuse to overwrite a real ~/.codex entry; only `init` may adopt real data.
+    for &entry in SWITCHED_ENTRIES {
+        let live = paths.codex_home().join(entry);
+        if let Ok(m) = fs::symlink_metadata(&live)
+            && !m.file_type().is_symlink()
+        {
+            let kind = if m.file_type().is_dir() {
+                "directory"
+            } else {
+                "file"
+            };
+            return Err(Error::Other(format!(
+                "~/.codex/{entry} is a real {kind}, not a managed symlink; run `init` first"
+            )));
+        }
+    }
+
+    // Phase 2: repoint each entry (each atomic; see the group-atomicity note above).
     for &entry in SWITCHED_ENTRIES {
         let target = acct.join(entry);
         // The account side must be a real entity. A symlink here (e.g. a stale reverse link

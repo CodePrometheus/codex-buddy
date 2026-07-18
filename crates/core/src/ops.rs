@@ -32,15 +32,7 @@ pub fn switch(paths: &Paths, alias: &str) -> Result<()> {
         return Err(Error::Other(format!("account {alias} has no auth.json")));
     }
 
-    // Refuse if ~/.codex/auth.json is a real file (unmanaged), to avoid clobbering it.
-    if let Ok(m) = fs::symlink_metadata(paths.codex_auth())
-        && m.file_type().is_file()
-    {
-        return Err(Error::Other(
-            "~/.codex/auth.json is not a managed symlink; run init first".into(),
-        ));
-    }
-
+    // point_switched_entries refuses to clobber a real ~/.codex/auth.json (run `init` first).
     point_switched_entries(paths, &dir)?;
 
     registry::update(paths, |r| {
@@ -297,8 +289,14 @@ pub fn rename(paths: &Paths, old: &str, new: &str) -> Result<()> {
 
     fs::rename(paths.account_dir(old), &new_dir)?;
 
-    if was_active {
-        point_switched_entries(paths, new)?;
+    // If repointing the active links at the new dir fails, undo the move so the active account's
+    // ~/.codex/auth.json is never left dangling (which would force a re-login).
+    if was_active
+        && let Err(e) = point_switched_entries(paths, new)
+    {
+        let _ = fs::rename(&new_dir, paths.account_dir(old));
+        let _ = point_switched_entries(paths, old);
+        return Err(e);
     }
 
     registry::update(paths, |r| {

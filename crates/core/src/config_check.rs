@@ -14,13 +14,13 @@ pub enum CredentialStore {
 }
 
 impl CredentialStore {
-    pub fn as_str(&self) -> String {
+    pub fn as_str(&self) -> &str {
         match self {
-            CredentialStore::File => "file".into(),
-            CredentialStore::Keyring => "keyring".into(),
-            CredentialStore::Auto => "auto".into(),
-            CredentialStore::Ephemeral => "ephemeral".into(),
-            CredentialStore::Unknown(s) => s.clone(),
+            CredentialStore::File => "file",
+            CredentialStore::Keyring => "keyring",
+            CredentialStore::Auto => "auto",
+            CredentialStore::Ephemeral => "ephemeral",
+            CredentialStore::Unknown(s) => s,
         }
     }
 
@@ -54,12 +54,14 @@ pub fn credential_store(config_path: &Path) -> Result<CredentialStore> {
 pub fn ensure_file_store(config_path: &Path) -> Result<()> {
     match credential_store(config_path)? {
         CredentialStore::File => Ok(()),
-        other => Err(Error::UnsupportedCredentialStore(other.as_str())),
+        other => Err(Error::UnsupportedCredentialStore(other.as_str().to_string())),
     }
 }
 
 /// Extract the value of `key = "value"` from a TOML line. Comment lines and keys that merely
-/// share `key` as a prefix are ignored.
+/// share `key` as a prefix are ignored. Deliberately a minimal line scan (no `toml` dependency):
+/// it assumes `cli_auth_credentials_store` is a top-level flat key, which is how codex writes it,
+/// and does not track `[table]` sections.
 fn extract_value(line: &str, key: &str) -> Option<String> {
     let rest = line.trim().strip_prefix(key)?;
     let rest = rest.trim_start().strip_prefix('=')?;

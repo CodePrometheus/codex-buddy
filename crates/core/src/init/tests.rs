@@ -137,3 +137,39 @@ fn rollback_restores_switched_entries() {
     assert!(!paths.account_dir("work").exists());
     assert!(paths.codex_config().exists());
 }
+
+#[test]
+fn apply_rolls_back_on_registry_failure() {
+    let d = tempdir().unwrap();
+    let paths = setup_codex(d.path());
+    let original_auth = fs::read_to_string(paths.codex_auth()).unwrap();
+
+    let p = plan(&paths, "work").unwrap();
+    // Make the final registry write fail: pre-write a registry with an unsupported schema, so
+    // apply_inner runs to completion then errors, exercising the automatic rollback path.
+    fs::create_dir_all(paths.buddy_home()).unwrap();
+    fs::write(
+        paths.registry_file(),
+        r#"{"schema_version":999,"accounts":[]}"#,
+    )
+    .unwrap();
+
+    assert!(apply(&paths, &p).is_err());
+
+    // Rolled back: ~/.codex/auth.json is a real file again with the original contents.
+    let m = fs::symlink_metadata(paths.codex_auth()).unwrap();
+    assert!(m.file_type().is_file());
+    assert_eq!(
+        fs::read_to_string(paths.codex_auth()).unwrap(),
+        original_auth
+    );
+    // sessions restored as a real dir with its original file; account dir gone.
+    assert!(
+        fs::symlink_metadata(paths.codex_home().join("sessions"))
+            .unwrap()
+            .file_type()
+            .is_dir()
+    );
+    assert!(paths.codex_home().join("sessions").join("s.jsonl").exists());
+    assert!(!paths.account_dir("work").exists());
+}
