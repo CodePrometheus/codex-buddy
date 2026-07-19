@@ -6,6 +6,9 @@ resolver = "2"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.89"
+license = "MIT"
+description = "Switch between and run multiple Codex CLI accounts in parallel, without forced re-logins."
+repository = "https://github.com/<YOUR_GH_USERNAME>/codex-buddy"
 
 [workspace.dependencies]
 codex-buddy-core = { path = "crates/core" }

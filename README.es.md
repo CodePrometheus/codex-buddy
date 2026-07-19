@@ -6,15 +6,15 @@
 ![Rust](https://img.shields.io/badge/rust-1.89%2B-orange.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 
-Cambia entre varias cuentas de [Codex CLI](https://developers.openai.com/codex) y ejecútalas en
-paralelo — sin forzar nunca un nuevo inicio de sesión.
+Ejecuta varias cuentas de [Codex CLI](https://developers.openai.com/codex) en paralelo — cambia
+o corre en simultáneo, sin re-logins.
 
 ## Características
 
+- **Cuentas realmente en paralelo** — ejecuta dos o más sesiones de Codex al mismo tiempo, cada
+  una con su propia cuenta
 - **Nunca fuerza un nuevo login** — cambia de cuenta ida y vuelta las veces que quieras, sin
   cierre de sesión forzado ni riesgo de activar la detección de abuso
-- **Cuentas realmente en paralelo** — ejecuta varias sesiones de Codex bajo distintas cuentas a
-  la vez
 - **100% local** — sin telemetría, sin dependencia de la nube, nada sale de tu máquina; un único
   binario de menos de 1&nbsp;MB
 - **Segura por diseño** — la configuración inicial respalda tu sesión existente antes de tocarla y
@@ -26,13 +26,19 @@ paralelo — sin forzar nunca un nuevo inicio de sesión.
 
 ```
 $ codex-buddy init
-Detected account: alice@work.example (plan: plus)
-Alias for this account? [work]:
-Adopted `work` as the active account.
+Detected current account:
+  email : alice@work.example
+  plan  : plus
+
+Alias for this account [work]:
+...
+Done: account 'work' is managed and set as current.
 
 $ codex-buddy add personal
-Opening `codex login` for the new account...
-Account `personal` added.
+Opening codex login for 'personal'; complete the login in your browser...
+...
+Account 'personal' added. Use `codex-buddy switch personal`, or `codex-buddy run personal -- ...`
+to run it in parallel.
 
 $ codex-buddy list
   ALIAS      EMAIL                  PLAN  5H  1W       ACTIVE
