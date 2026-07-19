@@ -96,6 +96,7 @@ pub fn apply(paths: &Paths, plan: &InitPlan) -> Result<()> {
 }
 
 fn apply_inner(paths: &Paths, plan: &InitPlan) -> Result<()> {
+    paths.ensure_buddy_home()?;
     fs::create_dir_all(paths.backup_dir())?;
     copy_file_synced(&plan.codex_auth, &plan.backup_path)?;
 

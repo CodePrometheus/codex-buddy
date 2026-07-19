@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -149,6 +150,7 @@ fn add_prepare(paths: &Paths, alias: &str) -> Result<PathBuf> {
     if account_dir.exists() {
         return Err(Error::AccountExists(alias.to_string()));
     }
+    paths.ensure_buddy_home()?;
     fs::create_dir_all(&account_dir)?;
     build_account_dir(paths, alias)?;
     Ok(account_dir)
@@ -202,6 +204,10 @@ pub fn remove(paths: &Paths, alias: &str) -> Result<()> {
         )));
     }
     let dir = rec.dir.clone();
+    // Defense in depth: `dir` only ever comes from a validated alias in normal operation, but
+    // registry.json is user-editable, and remove_dir_all is destructive — refuse anything that
+    // isn't a plain directory name before touching the filesystem.
+    validate_alias(&dir)?;
 
     // Delete the dir first: if it fails the account stays intact and removable again.
     match fs::remove_dir_all(paths.account_dir(&dir)) {
@@ -220,7 +226,11 @@ pub fn remove(paths: &Paths, alias: &str) -> Result<()> {
 /// register it (no login). Shares the build / parse / cleanup path with `add`.
 pub fn import(paths: &Paths, src: &Path, alias: &str) -> Result<()> {
     let account_dir = add_prepare(paths, alias)?;
-    if let Err(e) = fs::copy(src, paths.account_auth(alias)) {
+    // fs::copy carries over src's permission bits, which may be looser than we want for a
+    // credential file; pin it to owner-only regardless of how the source file was created.
+    if let Err(e) = fs::copy(src, paths.account_auth(alias)).and_then(|_| {
+        fs::set_permissions(paths.account_auth(alias), fs::Permissions::from_mode(0o600))
+    }) {
         let _ = fs::remove_dir_all(&account_dir);
         return Err(Error::Io(e));
     }
@@ -291,9 +301,7 @@ pub fn rename(paths: &Paths, old: &str, new: &str) -> Result<()> {
 
     // If repointing the active links at the new dir fails, undo the move so the active account's
     // ~/.codex/auth.json is never left dangling (which would force a re-login).
-    if was_active
-        && let Err(e) = point_switched_entries(paths, new)
-    {
+    if was_active && let Err(e) = point_switched_entries(paths, new) {
         let _ = fs::rename(&new_dir, paths.account_dir(old));
         let _ = point_switched_entries(paths, old);
         return Err(e);

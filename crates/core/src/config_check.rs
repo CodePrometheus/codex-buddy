@@ -54,7 +54,9 @@ pub fn credential_store(config_path: &Path) -> Result<CredentialStore> {
 pub fn ensure_file_store(config_path: &Path) -> Result<()> {
     match credential_store(config_path)? {
         CredentialStore::File => Ok(()),
-        other => Err(Error::UnsupportedCredentialStore(other.as_str().to_string())),
+        other => Err(Error::UnsupportedCredentialStore(
+            other.as_str().to_string(),
+        )),
     }
 }
 

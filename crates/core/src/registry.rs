@@ -1,5 +1,6 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -139,7 +140,9 @@ pub fn load(path: &Path) -> Result<Registry> {
     Ok(reg)
 }
 
-/// Write the registry atomically (temp file + fsync + rename).
+/// Write the registry atomically (temp file + fsync + rename). registry.json holds account
+/// emails and account keys, so the temp file (and thus the renamed-into-place result) is locked
+/// down to owner-only (0600) before it ever holds data.
 pub fn save(reg: &Registry, path: &Path) -> Result<()> {
     let dir = path
         .parent()
@@ -149,6 +152,7 @@ pub fn save(reg: &Registry, path: &Path) -> Result<()> {
     let tmp = dir.join(format!(".registry.json.tmp.{}", std::process::id()));
     {
         let mut f = File::create(&tmp)?;
+        f.set_permissions(fs::Permissions::from_mode(0o600))?;
         f.write_all(&data)?;
         f.sync_all()?;
     }
@@ -163,7 +167,7 @@ pub struct RegistryLock {
 
 /// Acquire the registry write lock, blocking until available.
 pub fn acquire_lock(paths: &Paths) -> Result<RegistryLock> {
-    fs::create_dir_all(paths.buddy_home())?;
+    paths.ensure_buddy_home()?;
     let lock_path = paths.buddy_home().join("registry.json.lock");
     let file = OpenOptions::new()
         .create(true)

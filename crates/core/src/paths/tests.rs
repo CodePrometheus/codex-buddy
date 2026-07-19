@@ -1,4 +1,15 @@
 use super::*;
+use std::os::unix::fs::PermissionsExt;
+
+#[test]
+fn ensure_buddy_home_creates_dir_and_locks_it_down() {
+    let d = tempfile::tempdir().unwrap();
+    let buddy = d.path().join("buddy");
+    let paths = Paths::with_roots(d.path().join("codex"), &buddy);
+    paths.ensure_buddy_home().unwrap();
+    let mode = fs::metadata(&buddy).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o700);
+}
 
 #[test]
 fn with_roots_derives_paths() {
@@ -24,6 +35,8 @@ fn alias_validation() {
     assert!(validate_alias("a/b").is_err());
     assert!(validate_alias("backups").is_err());
     assert!(validate_alias("registry.json").is_err());
+    assert!(validate_alias("registry.json.lock").is_err());
+    assert!(validate_alias(".hidden").is_err());
 }
 
 #[test]

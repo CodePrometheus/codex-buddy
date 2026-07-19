@@ -1,4 +1,6 @@
 use std::env;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
@@ -69,6 +71,15 @@ impl Paths {
     pub fn account_auth(&self, alias: &str) -> PathBuf {
         self.account_dir(alias).join("auth.json")
     }
+
+    /// Create `~/.codex-buddy` (if missing) and lock it down to owner-only (0700), so nothing
+    /// beneath it — registry.json, backups, account credentials — is reachable by other local
+    /// users regardless of their individual permissions. Idempotent; safe to call repeatedly.
+    pub fn ensure_buddy_home(&self) -> Result<()> {
+        fs::create_dir_all(&self.buddy_home)?;
+        fs::set_permissions(&self.buddy_home, fs::Permissions::from_mode(0o700))?;
+        Ok(())
+    }
 }
 
 /// Validate that an alias is safe as a directory name: non-empty, no path separators,
@@ -77,15 +88,17 @@ pub fn validate_alias(alias: &str) -> Result<()> {
     if alias.is_empty() {
         return Err(Error::Other("account alias must not be empty".into()));
     }
-    if alias == "." || alias == ".." {
-        return Err(Error::Other(format!("invalid account alias: {alias}")));
+    if alias.starts_with('.') {
+        return Err(Error::Other(format!(
+            "account alias must not start with '.': {alias}"
+        )));
     }
     if alias.contains('/') || alias.contains('\\') || alias.contains('\0') {
         return Err(Error::Other(format!(
             "account alias must not contain path separators: {alias}"
         )));
     }
-    if alias == "registry.json" || alias == "backups" {
+    if alias == "registry.json" || alias == "registry.json.lock" || alias == "backups" {
         return Err(Error::Other(format!("account alias is reserved: {alias}")));
     }
     Ok(())
