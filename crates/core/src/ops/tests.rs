@@ -321,3 +321,20 @@ fn switch_refuses_real_codex_auth() {
     assert!(m.file_type().is_file());
     assert_eq!(fs::read_to_string(paths.codex_auth()).unwrap(), "real-auth");
 }
+
+#[test]
+fn is_on_finds_a_binary_in_one_of_the_path_dirs() {
+    let d = tempdir().unwrap();
+    let bin_dir = d.path().join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    fs::write(bin_dir.join("codex"), "#!/bin/sh\n").unwrap();
+
+    let path_var = std::env::join_paths([d.path().join("empty"), bin_dir.clone()]).unwrap();
+    assert!(is_on("codex", &path_var));
+    assert!(!is_on("does-not-exist", &path_var));
+}
+
+#[test]
+fn is_on_is_false_for_an_empty_path() {
+    assert!(!is_on("codex", std::ffi::OsStr::new("")));
+}

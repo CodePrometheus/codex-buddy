@@ -20,15 +20,18 @@ final class AccountStore: ObservableObject {
         run { try doctor() } onSuccess: { self.doctorChecks = $0 }
     }
 
-    func switchTo(_ alias: String) {
+    @discardableResult
+    func switchTo(_ alias: String) -> Bool {
         run { try switchAccount(alias: alias) } onSuccess: { self.refresh() }
     }
 
-    func remove(_ alias: String) {
+    @discardableResult
+    func remove(_ alias: String) -> Bool {
         run { try removeAccount(alias: alias) } onSuccess: { self.refresh() }
     }
 
-    func rename(_ old: String, to new: String) {
+    @discardableResult
+    func rename(_ old: String, to new: String) -> Bool {
         run { try renameAccount(oldAlias: old, newAlias: new) } onSuccess: { self.refresh() }
     }
 
@@ -36,9 +39,24 @@ final class AccountStore: ObservableObject {
         try? accountHome(alias: alias)
     }
 
+    private var addInFlight = false
+
     /// Runs `codex login` (blocking, opens the system browser). Callers must show a loading
     /// state for the duration; the FFI call itself is dispatched off the main actor.
+    ///
+    /// `codex login` can't actually be interrupted once started — there's no cancellation hook
+    /// through the blocking FFI call — so a caller-side "Cancel" can only stop the *panel* from
+    /// waiting on it. `addInFlight` still refuses a second concurrent attempt while the first is
+    /// genuinely running, which is what actually matters: it stops two `codex login` processes
+    /// racing for the same or a different alias.
     func add(_ alias: String) async -> Bool {
+        guard !addInFlight else {
+            lastError = "A login is already in progress"
+            return false
+        }
+        addInFlight = true
+        defer { addInFlight = false }
+
         let failure = await Task.detached(priority: .userInitiated) { () -> String? in
             do {
                 try addAccount(alias: alias)
@@ -55,16 +73,20 @@ final class AccountStore: ObservableObject {
         return false
     }
 
-    func importAuthJSON(path: String, alias: String) {
+    @discardableResult
+    func importAuthJSON(path: String, alias: String) -> Bool {
         run { try CodexBuddyFFI.importAccount(authJsonPath: path, alias: alias) } onSuccess: { self.refresh() }
     }
 
-    private func run<T>(_ body: () throws -> T, onSuccess: (T) -> Void) {
+    @discardableResult
+    private func run<T>(_ body: () throws -> T, onSuccess: (T) -> Void) -> Bool {
         do {
             onSuccess(try body())
             lastError = nil
+            return true
         } catch {
             lastError = "\(error)"
+            return false
         }
     }
 }

@@ -69,8 +69,8 @@ pub struct DoctorCheck {
 #[uniffi::export]
 pub fn list_accounts() -> Result<Vec<Account>, FfiError> {
     let paths = Paths::from_env()?;
-    let views = ops::list(&paths)?;
     let reg = registry::load(&paths.registry_file())?;
+    let views = ops::list_from(&paths, &reg)?;
     let running = running_accounts(&paths, &reg);
     Ok(views.into_iter().map(|v| to_account(v, &running)).collect())
 }

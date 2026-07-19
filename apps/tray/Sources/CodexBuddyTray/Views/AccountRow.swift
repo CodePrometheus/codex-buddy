@@ -86,7 +86,10 @@ struct AccountRow: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            if !isRenaming { store.switchTo(account.alias) }
+            guard !isRenaming else { return }
+            if !store.switchTo(account.alias), let error = store.lastError {
+                onToast(error)
+            }
         }
     }
 
@@ -152,8 +155,12 @@ struct AccountRow: View {
                         .foregroundStyle(Theme.inkMuted)
                     Button("Remove") {
                         isConfirmingRemove = false
-                        store.remove(account.alias)
-                        onToast("Removed \(account.alias). You can add it again anytime.")
+                        let alias = account.alias
+                        if store.remove(alias) {
+                            onToast("Removed \(alias). You can add it again anytime.")
+                        } else if let error = store.lastError {
+                            onToast(error)
+                        }
                     }
                     .foregroundStyle(Theme.critical)
                 }
@@ -167,8 +174,11 @@ struct AccountRow: View {
         let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         isRenaming = false
         guard !trimmed.isEmpty, trimmed != account.alias else { return }
-        store.rename(account.alias, to: trimmed)
-        onToast("Renamed to \(trimmed)")
+        if store.rename(account.alias, to: trimmed) {
+            onToast("Renamed to \(trimmed)")
+        } else if let error = store.lastError {
+            onToast(error)
+        }
     }
 
     private func copyHomePath() {

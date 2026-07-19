@@ -1,3 +1,5 @@
+use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -8,7 +10,52 @@ use crate::config_check::ensure_file_store;
 use crate::error::{Error, Result};
 use crate::layout::{build_account_dir, point_switched_entries};
 use crate::paths::{Paths, validate_alias};
-use crate::registry::{self, AccountRecord, now_epoch};
+use crate::registry::{self, AccountRecord, Registry, now_epoch};
+
+/// A `Command` for the `codex` binary, with `PATH` widened to the user's login shell if `codex`
+/// isn't already reachable through the inherited one.
+///
+/// A GUI app launched from Finder/Dock (as the tray will be) only inherits the bare system
+/// `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — none of the Homebrew/nvm/asdf directories a
+/// terminal session picks up from shell profile files. `codex-buddy` itself runs fine either
+/// way; it's specifically this child process that needs the fuller PATH to find `codex`.
+fn codex_command() -> Command {
+    let mut cmd = Command::new("codex");
+    if !is_on_path("codex")
+        && let Some(path) = login_shell_path()
+    {
+        cmd.env("PATH", path);
+    }
+    cmd
+}
+
+fn is_on_path(bin: &str) -> bool {
+    is_on(bin, &env::var_os("PATH").unwrap_or_default())
+}
+
+fn is_on(bin: &str, path_var: &OsStr) -> bool {
+    env::split_paths(path_var).any(|dir| dir.join(bin).is_file())
+}
+
+/// The `PATH` a login shell would compute (sourcing `.zprofile`/`.profile` etc.), prepended to
+/// the current one. None if the shell can't be run or reports nothing.
+fn login_shell_path() -> Option<String> {
+    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let output = Command::new(&shell)
+        .args(["-lc", "echo -n \"$PATH\""])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let shell_path = String::from_utf8(output.stdout).ok()?;
+    let shell_path = shell_path.trim();
+    if shell_path.is_empty() {
+        return None;
+    }
+    let current = env::var("PATH").unwrap_or_default();
+    Some(format!("{shell_path}:{current}"))
+}
 
 /// Display view of an account.
 #[derive(Debug, Clone)]
@@ -76,7 +123,7 @@ pub fn run(paths: &Paths, alias: &str, args: &[String]) -> Result<i32> {
         Ok(())
     });
 
-    let status = Command::new("codex")
+    let status = codex_command()
         .env("CODEX_HOME", paths.account_dir(&dir))
         .args(args)
         .status()?;
@@ -86,6 +133,12 @@ pub fn run(paths: &Paths, alias: &str, args: &[String]) -> Result<i32> {
 /// List accounts; email / plan are re-parsed from each id_token, falling back to the registry.
 pub fn list(paths: &Paths) -> Result<Vec<AccountView>> {
     let reg = registry::load(&paths.registry_file())?;
+    list_from(paths, &reg)
+}
+
+/// Same as [`list`], but reuses an already-loaded registry — for callers (like the FFI layer)
+/// that also need it for something else and shouldn't read `registry.json` twice.
+pub fn list_from(paths: &Paths, reg: &Registry) -> Result<Vec<AccountView>> {
     let active = reg.active().map(str::to_owned);
     let mut out = Vec::with_capacity(reg.accounts.len());
     for rec in &reg.accounts {
@@ -118,7 +171,7 @@ pub fn current(paths: &Paths) -> Result<Option<AccountView>> {
 /// Log in and adopt a new account. Runs interactive `codex login`.
 pub fn add(paths: &Paths, alias: &str) -> Result<()> {
     let account_dir = add_prepare(paths, alias)?;
-    let status = Command::new("codex")
+    let status = codex_command()
         .env("CODEX_HOME", &account_dir)
         .arg("login")
         .status()?;
@@ -248,7 +301,7 @@ pub fn relogin(paths: &Paths, alias: &str) -> Result<()> {
     ensure_file_store(&paths.codex_config())?;
     build_account_dir(paths, &dir)?;
 
-    let status = Command::new("codex")
+    let status = codex_command()
         .env("CODEX_HOME", paths.account_dir(&dir))
         .arg("login")
         .status()?;

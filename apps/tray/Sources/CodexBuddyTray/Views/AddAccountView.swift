@@ -10,6 +10,7 @@ struct AddAccountView: View {
     @State private var expanded = false
     @State private var alias = ""
     @State private var isLoading = false
+    @State private var loginTask: Task<Void, Never>?
     @FocusState private var aliasFocused: Bool
 
     var body: some View {
@@ -67,7 +68,7 @@ struct AddAccountView: View {
                 .padding(10)
                 .background(Theme.accent, in: RoundedRectangle(cornerRadius: 14))
 
-                Button("Cancel") { isLoading = false }
+                Button("Cancel", action: cancelLogin)
                     .buttonStyle(.plain)
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(Theme.inkMuted)
@@ -110,8 +111,12 @@ struct AddAccountView: View {
         let trimmed = alias.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         isLoading = true
-        Task {
+        loginTask = Task {
             let ok = await store.add(trimmed)
+            // Cancel already dismissed this form; don't reach back into it after the fact —
+            // `codex login` itself can't be interrupted, so the account may still land in the
+            // registry, but the next panel refresh picks that up on its own.
+            guard !Task.isCancelled else { return }
             isLoading = false
             if ok {
                 expanded = false
@@ -123,6 +128,16 @@ struct AddAccountView: View {
         }
     }
 
+    /// Stops the panel from waiting on this attempt. `codex login` keeps running underneath —
+    /// see the note on `AccountStore.add` — but `addInFlight` there still blocks a second
+    /// concurrent login, so trying again right away reports "already in progress" instead of
+    /// racing a second `codex login` process.
+    private func cancelLogin() {
+        loginTask?.cancel()
+        loginTask = nil
+        isLoading = false
+    }
+
     private func importFile() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
@@ -131,9 +146,12 @@ struct AddAccountView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let trimmed = alias.trimmingCharacters(in: .whitespaces)
         let suggested = trimmed.isEmpty ? url.deletingPathExtension().lastPathComponent : trimmed
-        store.importAuthJSON(path: url.path, alias: suggested)
-        expanded = false
-        alias = ""
-        onToast("Imported \(suggested)")
+        if store.importAuthJSON(path: url.path, alias: suggested) {
+            expanded = false
+            alias = ""
+            onToast("Imported \(suggested)")
+        } else if let error = store.lastError {
+            onToast(error)
+        }
     }
 }
