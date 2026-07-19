@@ -295,6 +295,10 @@ jobs:
           persist-credentials: true
           repository: "CodePrometheus/codex-buddy"
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          # Without this, checkout defaults to the release tag (refs/tags/vX.Y.Z), landing in
+          # detached HEAD — fine for a separate tap repo, but this tap *is* the source repo, so
+          # the formula commit needs a real branch to push to.
+          ref: main
       # So we have access to the formula
       - name: Fetch homebrew formulae
         uses: actions/download-artifact@v8
