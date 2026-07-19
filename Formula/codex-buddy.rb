@@ -1,15 +1,15 @@
 class CodexBuddy < Formula
   desc "Switch between and run multiple Codex CLI accounts in parallel, without forced re-logins."
   homepage "https://github.com/CodePrometheus/codex-buddy"
-  version "0.1.0"
+  version "0.2.0"
   if OS.mac?
     if Hardware::CPU.arm?
-      url "https://github.com/CodePrometheus/codex-buddy/releases/download/v0.1.0/codex-buddy-aarch64-apple-darwin.tar.xz"
-      sha256 "79f12d6c3c31fffd9adcbe5b465711774d57314c2c6f5d88adcc733764470d7c"
+      url "https://github.com/CodePrometheus/codex-buddy/releases/download/v0.2.0/codex-buddy-aarch64-apple-darwin.tar.xz"
+      sha256 "cd0978cf0aef14a5139c9034ed902a3e08afe7c588ed0f40a140bcc60c7db08f"
     end
     if Hardware::CPU.intel?
-      url "https://github.com/CodePrometheus/codex-buddy/releases/download/v0.1.0/codex-buddy-x86_64-apple-darwin.tar.xz"
-      sha256 "2526d3d09a50f11845a23a6eaff1dd307a37e5395910a28f5fe82e37dcf6c1df"
+      url "https://github.com/CodePrometheus/codex-buddy/releases/download/v0.2.0/codex-buddy-x86_64-apple-darwin.tar.xz"
+      sha256 "73f1617700b27db6818c590b08039891bf80d657f9b28240cfe4fa18d3e7ebc4"
     end
   end
   license "MIT"
