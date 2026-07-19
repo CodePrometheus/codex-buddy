@@ -25,11 +25,17 @@ fn main() -> ExitCode {
 fn run() -> CliResult<i32> {
     let mut args = Arguments::from_env();
     let sub = args.subcommand()?;
-    // `run` passes everything after the alias through to codex verbatim, so a -h/--help there
-    // must reach codex; for every other command a top-level -h/--help prints our help.
-    if sub.as_deref() != Some("run") && args.contains(["-h", "--help"]) {
-        print_help();
-        return Ok(0);
+    // `run` passes everything after the alias through to codex verbatim, so -h/--help/-V/--version
+    // there must reach codex; for every other command these are handled at the top level.
+    if sub.as_deref() != Some("run") {
+        if args.contains(["-h", "--help"]) {
+            print_help();
+            return Ok(0);
+        }
+        if args.contains(["-V", "--version"]) {
+            println!("codex-buddy {}", env!("CARGO_PKG_VERSION"));
+            return Ok(0);
+        }
     }
     match sub.as_deref() {
         Some("init") => {
@@ -510,6 +516,7 @@ switch <alias> | -          switch account (- = previous)\n  \
 run <alias> -- <args>       run codex under an account (parallel)\n  \
 path <alias>                print an account's CODEX_HOME\n  \
 doctor                      check setup health\n\n  \
--h, --help                  show this help"
+-h, --help                  show this help\n  \
+-V, --version               show the version"
     );
 }

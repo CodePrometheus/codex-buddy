@@ -17,6 +17,24 @@
   就能看出哪里配置不对
 - **配置共享、登录隔离** —— `config.toml` 和规则对所有账号生效；凭证从不在账号间泄漏
 
+## 安装
+
+**Homebrew。** tap 就是本仓库本身(不是 `homebrew-` 前缀命名),第一次需要显式 tap URL 并信任一次:
+
+```sh
+brew tap CodePrometheus/codex-buddy https://github.com/CodePrometheus/codex-buddy
+brew trust codeprometheus/codex-buddy
+brew install codex-buddy
+```
+
+**Shell 脚本。** 直接下载预编译二进制,不需要 Homebrew:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/CodePrometheus/codex-buddy/releases/latest/download/codex-buddy-installer.sh | sh
+```
+
+两种方式都需要 Apple Silicon 或 Intel macOS;预编译二进制和校验和见 [Releases](https://github.com/CodePrometheus/codex-buddy/releases)。
+
 ## 快速上手
 
 ```

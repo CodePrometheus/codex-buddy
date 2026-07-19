@@ -22,6 +22,25 @@ run side by side, no re-logins.
 - **Shared config, isolated logins** — `config.toml` and rules apply to every account; credentials
   never leak between them
 
+## Install
+
+**Homebrew.** The tap is this repository itself (not a `homebrew-`-prefixed one), so it needs an
+explicit tap URL and a one-time trust the first time:
+
+```sh
+brew tap CodePrometheus/codex-buddy https://github.com/CodePrometheus/codex-buddy
+brew trust codeprometheus/codex-buddy
+brew install codex-buddy
+```
+
+**Shell script.** Downloads a prebuilt binary, no Homebrew needed:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/CodePrometheus/codex-buddy/releases/latest/download/codex-buddy-installer.sh | sh
+```
+
+Both need Apple Silicon or Intel macOS; see [Releases](https://github.com/CodePrometheus/codex-buddy/releases) for prebuilt binaries and checksums.
+
 ## Quick start
 
 ```
