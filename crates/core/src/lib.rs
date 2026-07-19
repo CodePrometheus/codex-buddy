@@ -10,6 +10,7 @@ pub mod layout;
 pub mod ops;
 pub mod paths;
 pub mod registry;
+pub mod running;
 pub mod usage;
 
 #[cfg(test)]

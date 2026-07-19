@@ -24,8 +24,15 @@ const WEEKLY: i64 = 10080;
 /// Newest usage snapshot from a sessions dir.
 ///
 /// Codex logs a rate_limits record per event, but any one record may carry only a single window
-/// (a fresh session often reports just the weekly one). So each window is tracked independently,
-/// keeping the newest (largest resets_at) seen, scanning rollouts newest-first until both the 5h
+/// (a fresh session often reports just the weekly one), so each window is tracked independently.
+/// Recency comes from scan order, not `resets_at`: for a rolling window, `resets_at` tracks when
+/// the *oldest* counted usage rolls off, which barely moves as a session's `used_percent` climbs
+/// (confirmed against a real session: it held one value across 30+ points of rising usage,
+/// wobbling by a second or two from API-side jitter) — comparing it as "bigger = newer" can pick
+/// an earlier, lower reading over the true latest one. Rollouts are scanned newest-file-first;
+/// within a file, `windows_in_file` returns records in the log's chronological order, so simply
+/// keeping the last one seen per window is that file's most recent reading. A window already
+/// found in a newer file is left alone — older files can't override it. Stops once both the 5h
 /// and weekly windows are known. None if the account has no rollouts carrying rate_limits.
 pub fn latest_usage(sessions_dir: &Path) -> Option<Usage> {
     let mut rollouts = Vec::new();
@@ -34,13 +41,12 @@ pub fn latest_usage(sessions_dir: &Path) -> Option<Usage> {
 
     let mut best: BTreeMap<i64, Window> = BTreeMap::new();
     for path in rollouts.iter().rev().take(80) {
+        let mut latest_in_file: BTreeMap<i64, Window> = BTreeMap::new();
         for w in windows_in_file(path) {
-            let newer = best
-                .get(&w.window_minutes)
-                .is_none_or(|cur| w.resets_at.unwrap_or(0) > cur.resets_at.unwrap_or(0));
-            if newer {
-                best.insert(w.window_minutes, w);
-            }
+            latest_in_file.insert(w.window_minutes, w);
+        }
+        for (window_minutes, w) in latest_in_file {
+            best.entry(window_minutes).or_insert(w);
         }
         if best.contains_key(&FIVE_HOUR) && best.contains_key(&WEEKLY) {
             break;

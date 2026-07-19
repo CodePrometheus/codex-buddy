@@ -1,0 +1,21 @@
+[package]
+name = "codex-buddy-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "uniffi FFI bindings for codex-buddy-core, consumed by the Swift menu bar tray"
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lib]
+name = "codex_buddy_ffi"
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+codex-buddy-core = { workspace = true }
+uniffi = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
