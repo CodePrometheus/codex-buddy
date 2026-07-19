@@ -8,7 +8,8 @@ edition = "2024"
 rust-version = "1.89"
 license = "MIT"
 description = "Switch between and run multiple Codex CLI accounts in parallel, without forced re-logins."
-repository = "https://github.com/<YOUR_GH_USERNAME>/codex-buddy"
+repository = "https://github.com/CodePrometheus/codex-buddy"
+homepage = "https://github.com/CodePrometheus/codex-buddy"
 
 [workspace.dependencies]
 codex-buddy-core = { path = "crates/core" }
@@ -23,3 +24,8 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
