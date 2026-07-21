@@ -22,6 +22,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var statusBarIcon = Self.makeStatusBarIcon()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Hidden mode used by the packaging script: render the app icon and quit, without ever
+        // showing a status item. Keeps the icon a byproduct of the real UI code, not a separate asset.
+        if let i = CommandLine.arguments.firstIndex(of: "--render-icon"),
+           i + 1 < CommandLine.arguments.count {
+            let ok = renderAppIconPNG(to: CommandLine.arguments[i + 1])
+            exit(ok ? 0 : 1)
+        }
+
         NSApp.setActivationPolicy(.accessory)
         appearance.apply()
 

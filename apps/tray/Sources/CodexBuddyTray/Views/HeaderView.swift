@@ -54,11 +54,17 @@ struct HeaderView: View {
 /// prompt glyph without borrowing its cloud shape or color. Native canvas is 700x260pt;
 /// callers scale the whole group via `.frame`.
 struct BuddyWordmark: View {
+    /// Defaults track the system via `Theme`; the app icon renders the same shapes with fixed
+    /// colors instead (an `.icns` is a baked bitmap and can't follow light/dark).
+    var letterColor: Color = Theme.brandInk
+    var markStart: Color = Theme.brandMarkStart
+    var markEnd: Color = Theme.brandMarkEnd
+
     var body: some View {
         ZStack {
-            BuddyLettersShape().fill(Theme.brandInk)
+            BuddyLettersShape().fill(letterColor)
             LinearGradient(
-                colors: [Theme.brandMarkStart, Theme.brandMarkEnd],
+                colors: [markStart, markEnd],
                 startPoint: Self.gradientStart,
                 endPoint: Self.gradientEnd
             )
@@ -87,7 +93,7 @@ struct BuddyWordmark: View {
 
 /// "b" + "ddy", transcribed 1:1 from the exported SVG path data (see `.agents/tray-logo-mockup.html`
 /// history for the design exploration that led here).
-private struct BuddyLettersShape: Shape {
+struct BuddyLettersShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
 

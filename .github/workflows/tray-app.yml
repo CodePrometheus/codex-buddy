@@ -1,0 +1,58 @@
+name: Tray app
+
+# Standalone from cargo-dist's release.yml on purpose: `dist generate` owns that file, so adding
+# a job there would reintroduce the drift we just removed. This builds the menu-bar app's .app
+# bundle and attaches it (zipped) to the GitHub Release.
+#
+# Triggers on `release: published` — cargo-dist creates the Release during the tag run, so waiting
+# for it to publish avoids racing the asset upload against a Release that doesn't exist yet.
+# The .app is ad-hoc signed only (not notarized); first launch needs right-click → Open.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach the .app to (e.g. v0.2.1)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          tag="${{ github.event.release.tag_name || github.event.inputs.tag }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Add Rust targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Build FFI xcframework
+        run: apps/tray/Scripts/build-ffi.sh
+
+      - name: Build universal .app
+        env:
+          CODEX_BUDDY_VERSION: ${{ steps.tag.outputs.version }}
+          SWIFT_ARCH_FLAGS: "--arch arm64 --arch x86_64"
+        run: apps/tray/Scripts/build-app.sh
+
+      - name: Zip bundle
+        run: |
+          cd apps/tray/build
+          # -y preserves the symlinks inside the .app so the bundle stays valid after unzip.
+          zip -r -y -q "Codex-Buddy-macOS.zip" "Codex Buddy.app"
+
+      - name: Attach to release
+        run: |
+          gh release upload "${{ steps.tag.outputs.tag }}" \
+            "apps/tray/build/Codex-Buddy-macOS.zip" --clobber
