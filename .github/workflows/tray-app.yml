@@ -67,19 +67,16 @@ jobs:
       - name: Build FFI xcframework
         run: apps/tray/Scripts/build-ffi.sh
 
-      - name: Build universal .app
+      # One single-arch .app per architecture (not a universal binary), so each user downloads
+      # only the slice they run — half the size. Matches how the CLI is split by arch.
+      - name: Build, zip, and attach per-arch .app
         env:
           CODEX_BUDDY_VERSION: ${{ steps.tag.outputs.version }}
-          SWIFT_ARCH_FLAGS: "--arch arm64 --arch x86_64"
-        run: apps/tray/Scripts/build-app.sh
-
-      - name: Zip bundle
         run: |
-          cd apps/tray/build
-          # -y preserves the symlinks inside the .app so the bundle stays valid after unzip.
-          zip -r -y -q "Codex-Buddy-macOS.zip" "Codex Buddy.app"
-
-      - name: Attach to release
-        run: |
-          gh release upload "${{ steps.tag.outputs.tag }}" \
-            "apps/tray/build/Codex-Buddy-macOS.zip" --clobber
+          for arch in arm64 x86_64; do
+            SWIFT_ARCH_FLAGS="--arch $arch" apps/tray/Scripts/build-app.sh
+            # -y preserves the symlinks inside the .app so the bundle stays valid after unzip.
+            ( cd apps/tray/build && zip -r -y -q "Codex-Buddy-$arch-macOS.zip" "Codex Buddy.app" )
+            gh release upload "${{ steps.tag.outputs.tag }}" \
+              "apps/tray/build/Codex-Buddy-$arch-macOS.zip" --clobber
+          done
