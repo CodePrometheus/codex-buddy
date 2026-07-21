@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Owns all core state for the panel; every mutation re-reads through the FFI so the UI never
 /// drifts from what `codex-buddy` on disk actually thinks. `ObservableObject`, not the newer
-/// `@Observable` macro, to stay on the macOS 13 floor `MenuBarExtra(.window)` targets.
+/// `@Observable` macro, to stay on the app's macOS 13 floor.
 @MainActor
 final class AccountStore: ObservableObject {
     @Published private(set) var accounts: [Account] = []
@@ -81,8 +81,11 @@ final class AccountStore: ObservableObject {
     @discardableResult
     private func run<T>(_ body: () throws -> T, onSuccess: (T) -> Void) -> Bool {
         do {
-            onSuccess(try body())
+            let value = try body()
+            // Clear before onSuccess: a nested run (e.g. the refresh after a mutation) may set
+            // its own error, which clearing afterwards would silently wipe.
             lastError = nil
+            onSuccess(value)
             return true
         } catch {
             lastError = "\(error)"

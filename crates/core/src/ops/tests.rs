@@ -256,6 +256,20 @@ fn remove_unknown_errors() {
 }
 
 #[test]
+fn a_tampered_dir_field_is_refused_before_touching_the_filesystem() {
+    let d = tempdir().unwrap();
+    let paths = setup(d.path());
+    registry::update(&paths, |r| {
+        r.find_mut("b").unwrap().dir = "../escape".into();
+        Ok(())
+    })
+    .unwrap();
+    assert!(remove(&paths, "b").is_err());
+    assert!(switch(&paths, "b").is_err());
+    assert!(rename(&paths, "b", "c").is_err());
+}
+
+#[test]
 fn import_copies_auth_and_registers() {
     let d = tempdir().unwrap();
     let paths = init_account_a(d.path());

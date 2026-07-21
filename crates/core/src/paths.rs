@@ -93,6 +93,12 @@ pub fn validate_alias(alias: &str) -> Result<()> {
             "account alias must not start with '.': {alias}"
         )));
     }
+    // '-' would collide with flag parsing and the `switch -` shorthand.
+    if alias.starts_with('-') {
+        return Err(Error::Other(format!(
+            "account alias must not start with '-': {alias}"
+        )));
+    }
     if alias.contains('/') || alias.contains('\\') || alias.contains('\0') {
         return Err(Error::Other(format!(
             "account alias must not contain path separators: {alias}"

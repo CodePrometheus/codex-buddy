@@ -114,8 +114,9 @@ fn rollback_restores_switched_entries() {
         account_dir: paths.account_dir("work"),
         account_auth: paths.account_auth("work"),
         backup_path: backup,
+        moves: vec!["auth.json".into(), "sessions".into()],
     };
-    rollback(&paths, &plan);
+    rollback(&paths, &plan).unwrap();
 
     // ~/.codex/auth.json + sessions restored to real entries; account dir gone.
     assert!(
@@ -136,6 +137,41 @@ fn rollback_restores_switched_entries() {
     );
     assert!(!paths.account_dir("work").exists());
     assert!(paths.codex_config().exists());
+}
+
+#[test]
+fn rollback_keeps_the_account_dir_when_a_restore_fails() {
+    let d = tempdir().unwrap();
+    let paths = setup_codex(d.path());
+
+    // Mid-migration state whose auth backup is missing, so the auth restore must fail.
+    fs::create_dir_all(paths.account_dir("work")).unwrap();
+    for entry in ["auth.json", "sessions"] {
+        fs::rename(
+            paths.codex_home().join(entry),
+            paths.account_dir("work").join(entry),
+        )
+        .unwrap();
+    }
+
+    let plan = InitPlan {
+        alias: "work".into(),
+        account_key: "u::a".into(),
+        email: None,
+        plan: None,
+        codex_auth: paths.codex_auth(),
+        account_dir: paths.account_dir("work"),
+        account_auth: paths.account_auth("work"),
+        backup_path: paths.backup_dir().join("missing.bak"),
+        moves: vec!["auth.json".into(), "sessions".into()],
+    };
+    let err = rollback(&paths, &plan).unwrap_err();
+
+    // The account dir survives as the sole copy of the unrestored auth.json.
+    assert!(err.contains("auth.json"));
+    assert!(paths.account_dir("work").join("auth.json").exists());
+    // Entries that could be restored were: sessions moved back out.
+    assert!(paths.codex_home().join("sessions").is_dir());
 }
 
 #[test]

@@ -49,7 +49,7 @@ fn spawn_fake_codex(dir: &Path, env: &[(&str, &Path)]) -> Child {
 /// a fixed sleep is flaky because first exec of a freshly copied binary can stall on
 /// signature / XProtect checks.
 fn spawn_and_wait_for_name(mut cmd: Command, name: &str) -> Child {
-    let child = cmd.spawn().unwrap();
+    let mut child = cmd.spawn().unwrap();
     let pid = child.id() as c_int;
     for _ in 0..200 {
         if process_name(pid).as_deref() == Some(name) {
@@ -57,6 +57,8 @@ fn spawn_and_wait_for_name(mut cmd: Command, name: &str) -> Child {
         }
         std::thread::sleep(Duration::from_millis(25));
     }
+    let _ = child.kill();
+    let _ = child.wait();
     panic!("process never showed up as {name}");
 }
 

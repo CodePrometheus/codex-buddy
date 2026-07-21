@@ -37,6 +37,9 @@ fn alias_validation() {
     assert!(validate_alias("registry.json").is_err());
     assert!(validate_alias("registry.json.lock").is_err());
     assert!(validate_alias(".hidden").is_err());
+    assert!(validate_alias("-").is_err());
+    assert!(validate_alias("-y").is_err());
+    assert!(validate_alias("--force").is_err());
 }
 
 #[test]

@@ -60,7 +60,7 @@ struct HeroView: View {
     private var usageStat: some View {
         VStack(spacing: 7) {
             UsageRingView(windows: account.usage, diameter: 64, showsCenterLabel: true)
-            if let other = secondaryWindow {
+            if let other = account.usage.secondary {
                 HStack(spacing: 5) {
                     Circle().fill(Theme.severity(remainingPercent: other.remainingPercent)).frame(width: 5, height: 5)
                     Text("\(other.label) \(Int(other.remainingPercent))%")
@@ -69,11 +69,5 @@ struct HeroView: View {
                 .foregroundStyle(Theme.inkMuted)
             }
         }
-    }
-
-    private var secondaryWindow: UsageWindow? {
-        guard account.usage.count > 1 else { return nil }
-        let tightest = account.usage.max(by: { $0.usedPercent < $1.usedPercent })
-        return account.usage.first { $0.windowMinutes != tightest?.windowMinutes }
     }
 }

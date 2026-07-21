@@ -1,6 +1,6 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -150,9 +150,14 @@ pub fn save(reg: &Registry, path: &Path) -> Result<()> {
     fs::create_dir_all(dir)?;
     let data = serde_json::to_vec_pretty(reg)?;
     let tmp = dir.join(format!(".registry.json.tmp.{}", std::process::id()));
+    let _ = fs::remove_file(&tmp);
     {
-        let mut f = File::create(&tmp)?;
-        f.set_permissions(fs::Permissions::from_mode(0o600))?;
+        // create_new + mode: born 0600, and never follows a pre-planted symlink.
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&tmp)?;
         f.write_all(&data)?;
         f.sync_all()?;
     }

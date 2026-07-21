@@ -58,8 +58,10 @@ struct AccountRow: View {
             },
             onRunInTerminal: {
                 showActions = false
-                TerminalLauncher.run(alias: account.alias)
-                onToast("Opened Terminal running codex-buddy run \(account.alias)")
+                // No success toast: Terminal taking focus closes the panel before it could show.
+                if !TerminalLauncher.run(alias: account.alias) {
+                    onToast("Could not prepare the Terminal launch script")
+                }
             },
             onRemove: {
                 showActions = false
@@ -193,7 +195,10 @@ struct AccountRow: View {
     }
 
     private func copyHomePath() {
-        guard let path = store.homeDirectory(for: account.alias) else { return }
+        guard let path = store.homeDirectory(for: account.alias) else {
+            onToast("Could not read the account's home directory")
+            return
+        }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(path, forType: .string)
         onToast("Copied \(path)")

@@ -9,15 +9,11 @@ struct UsageRingView: View {
     var diameter: CGFloat = 56
     var showsCenterLabel: Bool = false
 
-    private var fiveHour: UsageWindow? { windows.first { $0.windowMinutes <= 300 } }
-    private var weekly: UsageWindow? { windows.first { $0.windowMinutes > 300 } }
-    private var tightest: UsageWindow? { windows.max(by: { $0.usedPercent < $1.usedPercent }) }
-
     var body: some View {
         ZStack {
-            ring(fiveHour, lineWidth: 5, inset: 0)
-            ring(weekly, lineWidth: 5, inset: 8)
-            if showsCenterLabel, let tightest {
+            ring(windows.fiveHour, lineWidth: 5, inset: 0)
+            ring(windows.weekly, lineWidth: 5, inset: 8)
+            if showsCenterLabel, let tightest = windows.tightest {
                 VStack(spacing: 0) {
                     Text("\(Int(tightest.remainingPercent))")
                         .font(.system(size: diameter * 0.26, weight: .bold, design: .rounded))

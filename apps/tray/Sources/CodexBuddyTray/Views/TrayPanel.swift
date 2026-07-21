@@ -26,10 +26,10 @@ struct TrayPanel: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.panelCorner, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.panelCorner, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.16), radius: 24, y: 8)
-        .background(ClearWindowBackground())
-        .onAppear {
-            store.refresh()
-            store.refreshDoctor()
+        // Refresh failures have no button to hang an error off; surface them the same way as
+        // action failures.
+        .onChange(of: store.lastError) { error in
+            if let error { showToast(error) }
         }
     }
 
@@ -39,8 +39,8 @@ struct TrayPanel: View {
                 withAnimation(.easeOut(duration: 0.2)) { showDoctor = true }
             }
 
-            if let active = store.activeAccount, let index = store.accounts.firstIndex(where: { $0.alias == active.alias }) {
-                HeroView(account: active, hue: .forIndex(index))
+            if let active = store.activeAccount {
+                HeroView(account: active, hue: .forAlias(active.alias))
                 Divider().padding(.horizontal, 20)
             }
 
@@ -57,8 +57,8 @@ struct TrayPanel: View {
                     .padding(.top, 10)
                     .padding(.bottom, 6)
 
-                    ForEach(Array(store.accounts.enumerated()), id: \.element.alias) { index, account in
-                        AccountRow(account: account, hue: .forIndex(index), store: store, onToast: showToast)
+                    ForEach(store.accounts, id: \.alias) { account in
+                        AccountRow(account: account, hue: .forAlias(account.alias), store: store, onToast: showToast)
                     }
 
                     AddAccountView(store: store, onToast: showToast)

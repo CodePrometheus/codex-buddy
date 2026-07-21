@@ -70,10 +70,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.attributedTitle = title
     }
 
+    /// System semantic colors, not Theme's palette: the menu bar always follows the *system*
+    /// appearance, which the app's appearance override can't reach.
     private func color(for remainingPercent: Double) -> NSColor {
-        if remainingPercent >= 50 { return .systemGreen }
-        if remainingPercent >= 20 { return .systemOrange }
-        return .systemRed
+        switch Theme.Severity(remainingPercent: remainingPercent) {
+        case .plenty: .systemGreen
+        case .low: .systemOrange
+        case .critical: .systemRed
+        }
     }
 
     @objc private func statusItemClicked() {
@@ -110,14 +114,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    /// Clicking the status item while the panel is open resigns key first (closing it) before
+    /// the click reaches `togglePanel` — a reopen within this window is that same click.
+    private static let reopenDebounce: TimeInterval = 0.25
+
     private func togglePanel() {
         if let window = panelWindow, window.isVisible {
             window.orderOut(nil)
             return
         }
-        // Clicking the status item while the panel is open resigns key first, which already
-        // closed it — without this guard the same click would immediately reopen it.
-        if let closedAt = panelClosedAt, Date().timeIntervalSince(closedAt) < 0.25 { return }
+        if let closedAt = panelClosedAt, Date().timeIntervalSince(closedAt) < Self.reopenDebounce {
+            return
+        }
         showPanel()
     }
 
@@ -156,6 +164,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func panelResignedKey() {
+        // A modal (e.g. the import NSOpenPanel) taking key must not close the panel under it —
+        // its result and toast would render into a hidden window.
+        guard NSApp.modalWindow == nil else { return }
         panelWindow?.orderOut(nil)
         panelClosedAt = Date()
     }

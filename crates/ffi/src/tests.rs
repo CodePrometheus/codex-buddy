@@ -18,8 +18,8 @@ fn to_account_carries_running_state_from_the_set() {
     let mut running = BTreeSet::new();
     running.insert("work".to_string());
 
-    let running_acc = to_account(view("work", true, None), &running);
-    let idle_acc = to_account(view("personal", false, None), &running);
+    let running_acc = to_account(view("work", true, None), &running, 0);
+    let idle_acc = to_account(view("personal", false, None), &running, 0);
 
     assert!(running_acc.is_running);
     assert!(!idle_acc.is_running);
@@ -41,7 +41,7 @@ fn to_account_flattens_usage_windows() {
             },
         ],
     };
-    let acc = to_account(view("work", true, Some(usage)), &BTreeSet::new());
+    let acc = to_account(view("work", true, Some(usage)), &BTreeSet::new(), 0);
     assert_eq!(acc.usage.len(), 2);
     assert_eq!(acc.usage[0].window_minutes, 300);
     assert_eq!(acc.usage[1].used_percent, 78.0);
@@ -49,8 +49,38 @@ fn to_account_flattens_usage_windows() {
 
 #[test]
 fn to_account_with_no_usage_is_an_empty_vec() {
-    let acc = to_account(view("work", true, None), &BTreeSet::new());
+    let acc = to_account(view("work", true, None), &BTreeSet::new(), 0);
     assert!(acc.usage.is_empty());
+}
+
+#[test]
+fn to_account_drops_expired_windows() {
+    let usage = Usage {
+        windows: vec![
+            Window {
+                window_minutes: 300,
+                used_percent: 46.0,
+                resets_at: Some(50),
+            },
+            Window {
+                window_minutes: 10080,
+                used_percent: 78.0,
+                resets_at: Some(200),
+            },
+        ],
+    };
+    let acc = to_account(view("work", true, Some(usage)), &BTreeSet::new(), 100);
+    assert_eq!(acc.usage.len(), 1);
+    assert_eq!(acc.usage[0].window_minutes, 10080);
+}
+
+#[test]
+fn account_not_found_maps_to_the_not_found_case() {
+    let ffi_err: FfiError = codex_buddy_core::error::Error::AccountNotFound("work".into()).into();
+    assert!(matches!(ffi_err, FfiError::NotFound(_)));
+    let ffi_err: FfiError =
+        codex_buddy_core::error::Error::NotInitialized("run init first".into()).into();
+    assert!(matches!(ffi_err, FfiError::NotInitialized(_)));
 }
 
 #[test]

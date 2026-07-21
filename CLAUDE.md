@@ -12,10 +12,11 @@ symlink to the active account's file. **Switching only repoints that symlink; au
 copied.** This sidesteps OAuth refresh-token rotation: a credential exists as exactly one file,
 refreshed in place, so there is never a stale copy that would force a re-login.
 
-- Isolated (per account, never shared): `auth.json`, and all sqlite (`sqlite/` dir, `*.sqlite*`).
-- Shared (symlinked back to `~/.codex`): everything else — config.toml, AGENTS.md, rules,
-  sessions, history.jsonl, ...
-- Parallel = run codex with `CODEX_HOME=<account dir>`; switch = repoint `~/.codex/auth.json`.
+- Switched (per account; `~/.codex/<entry>` symlinks to the active account's copy): `auth.json`,
+  `sessions/`, `history.jsonl`.
+- Isolated (per account, never shared or linked): all sqlite (`sqlite/` dir, `*.sqlite*`).
+- Shared (symlinked back to `~/.codex`): everything else — config.toml, AGENTS.md, rules, ...
+- Parallel = run codex with `CODEX_HOME=<account dir>`; switch = repoint the switched symlinks.
 
 Hard requirement: codex's `cli_auth_credentials_store` must be `file` (keyring / auto / ephemeral
 move or delete auth.json and break the scheme). `config_check` enforces this.

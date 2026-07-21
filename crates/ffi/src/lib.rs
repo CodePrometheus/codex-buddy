@@ -13,16 +13,31 @@ use codex_buddy_core::running::running_accounts;
 
 uniffi::setup_scaffolding!();
 
+/// Mirrors the decision-relevant categories of core's `Error` so Swift can branch (inline
+/// "alias exists" vs. a guided init flow) without string-matching English messages. Each case
+/// still carries the full human-readable message as its payload.
 #[derive(Debug, uniffi::Error)]
 #[uniffi(flat_error)]
 pub enum FfiError {
+    /// The requested account alias does not exist.
+    NotFound(String),
+    /// The account alias (or its account key) already exists.
+    AlreadyExists(String),
+    /// ~/.codex is not under codex-buddy management; init is required.
+    NotInitialized(String),
+    /// An auth.json that should exist doesn't (relogin or login required).
+    MissingAuth(String),
     Failed(String),
 }
 
 impl std::fmt::Display for FfiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FfiError::Failed(m) => write!(f, "{m}"),
+            FfiError::NotFound(m)
+            | FfiError::AlreadyExists(m)
+            | FfiError::NotInitialized(m)
+            | FfiError::MissingAuth(m)
+            | FfiError::Failed(m) => write!(f, "{m}"),
         }
     }
 }
@@ -31,7 +46,15 @@ impl std::error::Error for FfiError {}
 
 impl From<codex_buddy_core::error::Error> for FfiError {
     fn from(e: codex_buddy_core::error::Error) -> Self {
-        FfiError::Failed(e.to_string())
+        use codex_buddy_core::error::Error;
+        let msg = e.to_string();
+        match e {
+            Error::AccountNotFound(_) => FfiError::NotFound(msg),
+            Error::AccountExists(_) => FfiError::AlreadyExists(msg),
+            Error::NotInitialized(_) => FfiError::NotInitialized(msg),
+            Error::MissingAuth(_) => FfiError::MissingAuth(msg),
+            _ => FfiError::Failed(msg),
+        }
     }
 }
 
@@ -39,6 +62,8 @@ impl From<codex_buddy_core::error::Error> for FfiError {
 pub struct UsageWindow {
     pub window_minutes: i64,
     pub used_percent: f64,
+    /// Unix epoch seconds when this window resets, when known.
+    pub resets_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -49,6 +74,8 @@ pub struct Account {
     pub is_active: bool,
     pub is_running: bool,
     pub usage: Vec<UsageWindow>,
+    /// Unix epoch seconds of the last switch/run through codex-buddy, when known.
+    pub last_used_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, uniffi::Enum)]
@@ -72,7 +99,11 @@ pub fn list_accounts() -> Result<Vec<Account>, FfiError> {
     let reg = registry::load(&paths.registry_file())?;
     let views = ops::list_from(&paths, &reg)?;
     let running = running_accounts(&paths, &reg);
-    Ok(views.into_iter().map(|v| to_account(v, &running)).collect())
+    let now = registry::now_epoch();
+    Ok(views
+        .into_iter()
+        .map(|v| to_account(v, &running, now))
+        .collect())
 }
 
 #[uniffi::export]
@@ -130,17 +161,20 @@ pub fn doctor() -> Result<Vec<DoctorCheck>, FfiError> {
         .collect())
 }
 
-fn to_account(v: AccountView, running: &BTreeSet<String>) -> Account {
+fn to_account(v: AccountView, running: &BTreeSet<String>, now: i64) -> Account {
     Account {
         is_running: running.contains(&v.alias),
+        // Drop expired windows: the same validity rule the CLI applies before display.
         usage: v
             .usage
             .map(|u| {
                 u.windows
                     .into_iter()
+                    .filter(|w| !w.is_expired(now))
                     .map(|w| UsageWindow {
                         window_minutes: w.window_minutes,
                         used_percent: w.used_percent,
+                        resets_at: w.resets_at,
                     })
                     .collect()
             })
@@ -149,6 +183,7 @@ fn to_account(v: AccountView, running: &BTreeSet<String>) -> Account {
         email: v.email,
         plan: v.plan,
         is_active: v.is_active,
+        last_used_at: v.last_used_at,
     }
 }
 

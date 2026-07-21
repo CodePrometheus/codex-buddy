@@ -21,6 +21,10 @@ pub enum Error {
         found: u32,
         supported: u32,
     },
+    /// ~/.codex is not (or not fully) under codex-buddy management; `init` fixes it.
+    NotInitialized(String),
+    /// An auth.json that should exist doesn't (not logged in, or the account's file is gone).
+    MissingAuth(String),
     Other(String),
 }
 
@@ -39,7 +43,9 @@ impl fmt::Display for Error {
                 f,
                 "registry schema too new (file is {found}, this tool supports {supported}); upgrade codex-buddy"
             ),
-            Error::Other(m) => write!(f, "{m}"),
+            Error::NotInitialized(m) | Error::MissingAuth(m) | Error::Other(m) => {
+                write!(f, "{m}")
+            }
         }
     }
 }

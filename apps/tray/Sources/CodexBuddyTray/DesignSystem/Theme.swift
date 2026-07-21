@@ -43,11 +43,13 @@ enum Theme {
     static let toastInk = dynamic(light: 0xFCFAF5, dark: 0x201F1C)
 
     static let panelCorner: CGFloat = 28
+    static let formCorner: CGFloat = 20
     static let rowCorner: CGFloat = 18
+    static let controlCorner: CGFloat = 14
     static let panelWidth: CGFloat = 396
 
-    /// Four rotating identity colors: mint, apricot, sky, lilac. `AccountHue` picks one per
-    /// account by list position, applied to its avatar and plan chip.
+    /// Four identity colors: mint, apricot, sky, lilac. `AccountHue` picks one per account by
+    /// hashing its alias, applied to its avatar and plan chip.
     enum AccountHue: Int, CaseIterable {
         case mint, apricot, sky, lilac
 
@@ -78,16 +80,39 @@ enum Theme {
             }
         }
 
-        static func forIndex(_ i: Int) -> AccountHue {
-            allCases[i % allCases.count]
+        /// FNV-1a over the alias: identity colors stay stable when the list reorders or shrinks
+        /// (Swift's `hashValue` is per-process seeded, so it can't be used here).
+        static func forAlias(_ alias: String) -> AccountHue {
+            var h: UInt64 = 0xcbf2_9ce4_8422_2325
+            for byte in alias.utf8 {
+                h = (h ^ UInt64(byte)) &* 0x0000_0100_0000_01b3
+            }
+            return allCases[Int(h % UInt64(allCases.count))]
         }
     }
 
-    /// Severity for a "percent remaining" reading — plenty left, getting low, almost gone.
+    /// Severity tiers for a "percent remaining" reading — plenty left, getting low, almost
+    /// gone. The single home of the 50/20 thresholds; each surface maps tiers to its own colors.
+    enum Severity {
+        case plenty, low, critical
+
+        init(remainingPercent: Double) {
+            self = if remainingPercent >= 50 {
+                .plenty
+            } else if remainingPercent >= 20 {
+                .low
+            } else {
+                .critical
+            }
+        }
+    }
+
     static func severity(remainingPercent: Double) -> Color {
-        if remainingPercent >= 50 { return success }
-        if remainingPercent >= 20 { return warning }
-        return critical
+        switch Severity(remainingPercent: remainingPercent) {
+        case .plenty: success
+        case .low: warning
+        case .critical: critical
+        }
     }
 
     private static func dynamic(light: Int, dark: Int, lightAlpha: Double = 1, darkAlpha: Double = 1) -> Color {

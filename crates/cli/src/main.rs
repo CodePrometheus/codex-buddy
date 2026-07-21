@@ -1,3 +1,5 @@
+use std::env;
+use std::ffi::{OsStr, OsString};
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -7,17 +9,39 @@ use codex_buddy_core::doctor;
 use codex_buddy_core::init::{self, InitPlan};
 use codex_buddy_core::ops;
 use codex_buddy_core::paths::{Paths, suggest_alias};
+use codex_buddy_core::registry::now_epoch;
 use codex_buddy_core::usage;
 use pico_args::Arguments;
 
 type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
+
+/// A command-line usage mistake (missing/extra arguments), exiting 2 like an unknown command —
+/// distinct from an operation that failed (exit 1).
+#[derive(Debug)]
+struct UsageError(String);
+
+impl std::fmt::Display for UsageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for UsageError {}
+
+fn usage_err<T>(msg: impl Into<String>) -> CliResult<T> {
+    Err(Box::new(UsageError(msg.into())))
+}
 
 fn main() -> ExitCode {
     match run() {
         Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
         Err(e) => {
             eprintln!("codex-buddy: {e}");
-            ExitCode::FAILURE
+            if e.downcast_ref::<UsageError>().is_some() {
+                ExitCode::from(2)
+            } else {
+                ExitCode::FAILURE
+            }
         }
     }
 }
@@ -51,11 +75,11 @@ fn run() -> CliResult<i32> {
             Ok(0)
         }
         Some("list") => {
-            cmd_list()?;
+            cmd_list(args)?;
             Ok(0)
         }
         Some("current") => {
-            cmd_current()?;
+            cmd_current(args)?;
             Ok(0)
         }
         Some("run") => cmd_run(args),
@@ -75,7 +99,7 @@ fn run() -> CliResult<i32> {
             cmd_relogin(args)?;
             Ok(0)
         }
-        Some("doctor") => cmd_doctor(),
+        Some("doctor") => cmd_doctor(args),
         Some("path") => {
             cmd_path(args)?;
             Ok(0)
@@ -92,13 +116,29 @@ fn run() -> CliResult<i32> {
     }
 }
 
+/// Up to `max` positional args; anything beyond (an extra word, a typo'd flag) errors instead
+/// of being silently ignored — `remove alias --ys` must not quietly fall back to interactive.
+fn positionals(args: Arguments, max: usize, usage: &str) -> CliResult<Vec<String>> {
+    let rest = args.finish();
+    if let Some(extra) = rest.get(max) {
+        return usage_err(format!(
+            "unexpected argument `{}`; usage: {usage}",
+            extra.to_string_lossy()
+        ));
+    }
+    Ok(rest
+        .into_iter()
+        .map(|s| s.to_string_lossy().into_owned())
+        .collect())
+}
+
 fn cmd_init(mut args: Arguments) -> CliResult<()> {
     let yes = args.contains("--yes");
-    let rest = args.finish();
+    let rest = positionals(args, 1, "codex-buddy init [alias] [--yes]")?;
     let paths = Paths::from_env()?;
 
-    let alias = match rest.first() {
-        Some(s) => s.to_string_lossy().into_owned(),
+    let alias = match rest.into_iter().next() {
+        Some(s) => s,
         None => prompt_alias_for_init(&paths)?,
     };
 
@@ -118,30 +158,27 @@ fn cmd_init(mut args: Arguments) -> CliResult<()> {
     Ok(())
 }
 
-/// When init is run without an alias: show the detected account and ask for one,
-/// suggesting the email's local part.
+/// When init is run without an alias: run the alias-independent checks first (so "not logged
+/// in" / "already initialized" fail before any prompt), then show the detected account and ask
+/// for a name, suggesting the email's local part.
 fn prompt_alias_for_init(paths: &Paths) -> CliResult<String> {
-    let suggested = match auth::load_auth_info(&paths.codex_auth()) {
-        Ok(info) => {
-            println!("Detected current account:");
-            println!("  email : {}", info.email.as_deref().unwrap_or("-"));
-            println!("  plan  : {}", info.plan.as_deref().unwrap_or("-"));
-            println!();
-            suggest_alias(info.email.as_deref())
-        }
-        Err(_) => "default".to_string(),
-    };
+    let info = init::preflight(paths)?;
+    println!("Detected current account:");
+    println!("  email : {}", info.email.as_deref().unwrap_or("-"));
+    println!("  plan  : {}", info.plan.as_deref().unwrap_or("-"));
+    println!();
+    let suggested = suggest_alias(info.email.as_deref());
     Ok(prompt_with_default("Alias for this account", &suggested)?)
 }
 
 fn cmd_add(args: Arguments) -> CliResult<()> {
-    let rest = args.finish();
-    let alias = match rest.first() {
-        Some(s) => s.to_string_lossy().into_owned(),
+    let rest = positionals(args, 1, "codex-buddy add [alias]")?;
+    let alias = match rest.into_iter().next() {
+        Some(s) => s,
         None => {
             let a = prompt_line("Alias for the new account: ")?;
             if a.is_empty() {
-                return Err("an account alias is required".into());
+                return usage_err("an account alias is required");
             }
             a
         }
@@ -156,11 +193,12 @@ fn cmd_add(args: Arguments) -> CliResult<()> {
 }
 
 fn cmd_switch(args: Arguments) -> CliResult<()> {
-    let rest = args.finish();
-    let target = rest
-        .first()
-        .map(|s| s.to_string_lossy().into_owned())
-        .ok_or("switch needs an account alias (or - for the previous one)")?;
+    let Some(target) = positionals(args, 1, "codex-buddy switch <alias | ->")?
+        .into_iter()
+        .next()
+    else {
+        return usage_err("switch needs an account alias (or - for the previous one)");
+    };
 
     let paths = Paths::from_env()?;
     if target == "-" {
@@ -168,13 +206,15 @@ fn cmd_switch(args: Arguments) -> CliResult<()> {
     } else {
         ops::switch(&paths, &target)?;
     }
-    if let Some(v) = ops::current(&paths)? {
-        println!("Switched to: {}", fmt_account(&v));
+    match ops::current(&paths)? {
+        Some(v) => println!("Switched to: {}", fmt_account(&v)),
+        None => println!("Switched to: {target}"),
     }
     Ok(())
 }
 
-fn cmd_list() -> CliResult<()> {
+fn cmd_list(args: Arguments) -> CliResult<()> {
+    positionals(args, 0, "codex-buddy list")?;
     let paths = Paths::from_env()?;
     let views = ops::list(&paths)?;
     if views.is_empty() {
@@ -192,11 +232,11 @@ fn cmd_list() -> CliResult<()> {
     let plans: Vec<String> = views.iter().map(plan_of).collect();
     let w5: Vec<String> = views
         .iter()
-        .map(|v| fmt_window(&v.usage, 300, now))
+        .map(|v| fmt_window(&v.usage, usage::FIVE_HOUR_MINUTES, now))
         .collect();
     let w1: Vec<String> = views
         .iter()
-        .map(|v| fmt_window(&v.usage, 10080, now))
+        .map(|v| fmt_window(&v.usage, usage::WEEKLY_MINUTES, now))
         .collect();
 
     let width = |vals: &[String], head: &str| {
@@ -215,7 +255,7 @@ fn cmd_list() -> CliResult<()> {
     println!(
         "{}",
         s.dim(&format!(
-            "  {:<alias_w$}  {:<email_w$}  {:<plan_w$}  {:<w5_w$}  {:<w1_w$}  ACTIVE",
+            "  {:<alias_w$}  {:<email_w$}  {:<plan_w$}  {:<w5_w$}  {:<w1_w$}  LAST USED",
             "ALIAS", "EMAIL", "PLAN", "5H", "1W"
         ))
     );
@@ -239,7 +279,8 @@ fn cmd_list() -> CliResult<()> {
     Ok(())
 }
 
-fn cmd_current() -> CliResult<()> {
+fn cmd_current(args: Arguments) -> CliResult<()> {
+    positionals(args, 0, "codex-buddy current")?;
     let paths = Paths::from_env()?;
     match ops::current(&paths)? {
         Some(v) => println!("{}", fmt_account(&v)),
@@ -249,29 +290,25 @@ fn cmd_current() -> CliResult<()> {
 }
 
 fn cmd_run(args: Arguments) -> CliResult<i32> {
-    let rest = args.finish();
-    let mut it = rest.into_iter().map(|s| s.to_string_lossy().into_owned());
-    let alias = it
-        .next()
-        .ok_or("run needs an account alias: codex-buddy run <alias> -- <codex args>")?;
-    let mut passthrough: Vec<String> = it.collect();
-    if passthrough.first().map(String::as_str) == Some("--") {
+    // Everything after the alias is codex's, verbatim — no positional cap, no UTF-8 conversion.
+    let mut rest = args.finish().into_iter();
+    let Some(alias) = rest.next() else {
+        return usage_err("run needs an account alias: codex-buddy run <alias> -- <codex args>");
+    };
+    let mut passthrough: Vec<OsString> = rest.collect();
+    if passthrough.first().map(OsString::as_os_str) == Some(OsStr::new("--")) {
         passthrough.remove(0);
     }
     let paths = Paths::from_env()?;
-    Ok(ops::run(&paths, &alias, &passthrough)?)
+    Ok(ops::run(&paths, &alias.to_string_lossy(), &passthrough)?)
 }
 
 fn cmd_rename(args: Arguments) -> CliResult<()> {
-    let rest = args.finish();
-    let old = rest
-        .first()
-        .map(|s| s.to_string_lossy().into_owned())
-        .ok_or("rename needs: codex-buddy rename <old> <new>")?;
-    let new = rest
-        .get(1)
-        .map(|s| s.to_string_lossy().into_owned())
-        .ok_or("rename needs: codex-buddy rename <old> <new>")?;
+    let usage = "codex-buddy rename <old> <new>";
+    let mut rest = positionals(args, 2, usage)?.into_iter();
+    let (Some(old), Some(new)) = (rest.next(), rest.next()) else {
+        return usage_err(format!("rename needs: {usage}"));
+    };
     let paths = Paths::from_env()?;
     ops::rename(&paths, &old, &new)?;
     println!("Renamed: {old} -> {new}");
@@ -280,12 +317,15 @@ fn cmd_rename(args: Arguments) -> CliResult<()> {
 
 fn cmd_remove(mut args: Arguments) -> CliResult<()> {
     let yes = args.contains("--yes");
-    let rest = args.finish();
-    let alias = rest
-        .first()
-        .map(|s| s.to_string_lossy().into_owned())
-        .ok_or("remove needs an account alias")?;
+    let Some(alias) = positionals(args, 1, "codex-buddy remove <alias> [--yes]")?
+        .into_iter()
+        .next()
+    else {
+        return usage_err("remove needs an account alias");
+    };
     let paths = Paths::from_env()?;
+    // Resolve before prompting: confirming deletion of a nonexistent account is noise.
+    ops::account_home(&paths, &alias)?;
     if !yes
         && !confirm(&format!(
             "Remove account '{alias}' and delete its credentials? This cannot be undone."
@@ -301,11 +341,16 @@ fn cmd_remove(mut args: Arguments) -> CliResult<()> {
 
 fn cmd_import(mut args: Arguments) -> CliResult<()> {
     let alias_opt: Option<String> = args.opt_value_from_str("--alias")?;
-    let rest = args.finish();
-    let src = rest
-        .first()
-        .map(PathBuf::from)
-        .ok_or("import needs a path to an auth.json")?;
+    let Some(src) = positionals(
+        args,
+        1,
+        "codex-buddy import <auth.json path> [--alias <name>]",
+    )?
+    .into_iter()
+    .next()
+    .map(PathBuf::from) else {
+        return usage_err("import needs a path to an auth.json");
+    };
     let paths = Paths::from_env()?;
     let alias = match alias_opt {
         Some(a) => a,
@@ -321,11 +366,12 @@ fn cmd_import(mut args: Arguments) -> CliResult<()> {
 }
 
 fn cmd_relogin(args: Arguments) -> CliResult<()> {
-    let rest = args.finish();
-    let alias = rest
-        .first()
-        .map(|s| s.to_string_lossy().into_owned())
-        .ok_or("relogin needs an account alias")?;
+    let Some(alias) = positionals(args, 1, "codex-buddy relogin <alias>")?
+        .into_iter()
+        .next()
+    else {
+        return usage_err("relogin needs an account alias");
+    };
     let paths = Paths::from_env()?;
     println!("Opening codex login for '{alias}'; complete the login in your browser...");
     ops::relogin(&paths, &alias)?;
@@ -333,7 +379,8 @@ fn cmd_relogin(args: Arguments) -> CliResult<()> {
     Ok(())
 }
 
-fn cmd_doctor() -> CliResult<i32> {
+fn cmd_doctor(args: Arguments) -> CliResult<i32> {
+    positionals(args, 0, "codex-buddy doctor")?;
     let paths = Paths::from_env()?;
     let checks = doctor::diagnose(&paths);
     let mut has_fail = false;
@@ -352,11 +399,12 @@ fn cmd_doctor() -> CliResult<i32> {
 }
 
 fn cmd_path(args: Arguments) -> CliResult<()> {
-    let rest = args.finish();
-    let alias = rest
-        .first()
-        .map(|s| s.to_string_lossy().into_owned())
-        .ok_or("path needs an account alias")?;
+    let Some(alias) = positionals(args, 1, "codex-buddy path <alias>")?
+        .into_iter()
+        .next()
+    else {
+        return usage_err("path needs an account alias");
+    };
     let paths = Paths::from_env()?;
     println!("{}", ops::account_home(&paths, &alias)?.display());
     Ok(())
@@ -371,13 +419,6 @@ fn fmt_account(v: &ops::AccountView) -> String {
     )
 }
 
-fn now_epoch() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-}
-
 /// One window's usage as `34% (3h)` (used percent + countdown to reset), or `-` when the window
 /// has no data or its reset is already in the past.
 fn fmt_window(u: &Option<usage::Usage>, mins: i64, now: i64) -> String {
@@ -385,7 +426,7 @@ fn fmt_window(u: &Option<usage::Usage>, mins: i64, now: i64) -> String {
         return "-".to_string();
     };
     match u.windows.iter().find(|w| w.window_minutes == mins) {
-        Some(w) if w.resets_at.is_none_or(|r| r > now) => {
+        Some(w) if !w.is_expired(now) => {
             let used = w.used_percent.clamp(0.0, 100.0);
             match w.resets_at {
                 Some(r) => format!("{used:.0}% ({})", fmt_duration(r - now)),
@@ -425,7 +466,8 @@ fn fmt_ago(t: Option<i64>, now: i64) -> String {
     }
 }
 
-/// Minimal ANSI styling, disabled when stdout is not a terminal.
+/// Minimal ANSI styling, disabled when stdout is not a terminal, `NO_COLOR` is set
+/// (https://no-color.org), or the terminal declares itself dumb.
 struct Style {
     on: bool,
 }
@@ -433,7 +475,9 @@ struct Style {
 impl Style {
     fn detect() -> Self {
         Self {
-            on: io::stdout().is_terminal(),
+            on: io::stdout().is_terminal()
+                && env::var_os("NO_COLOR").is_none()
+                && env::var_os("TERM").is_none_or(|t| t != "dumb"),
         }
     }
 
@@ -457,15 +501,18 @@ fn print_init_plan(plan: &InitPlan) {
     println!("  email   : {}", plan.email.as_deref().unwrap_or("-"));
     println!("  plan    : {}", plan.plan.as_deref().unwrap_or("-"));
     println!();
-    println!("  move {}", plan.codex_auth.display());
-    println!("  to   {}", plan.account_auth.display());
-    println!(
-        "  replace {} with a symlink to it",
-        plan.codex_auth.display()
-    );
-    println!("  backup the original to {}", plan.backup_path.display());
+    let codex_home = plan
+        .codex_auth
+        .parent()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "~/.codex".into());
+    println!("  move    {} (become per-account)", plan.moves.join(", "));
+    println!("  from    {codex_home}");
+    println!("  into    {}", plan.account_dir.display());
+    println!("  each is replaced by a symlink to this account's copy");
+    println!("  backup  auth.json -> {}", plan.backup_path.display());
     println!();
-    println!("  unchanged: config.toml / sessions / history / sqlite / everything else");
+    println!("  unchanged: config.toml / sqlite / everything else (stays shared)");
     println!();
 }
 

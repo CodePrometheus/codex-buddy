@@ -32,19 +32,7 @@ pub fn point_switched_entries(paths: &Paths, alias: &str) -> Result<()> {
 
     // Phase 1: refuse to overwrite a real ~/.codex entry; only `init` may adopt real data.
     for &entry in SWITCHED_ENTRIES {
-        let live = paths.codex_home().join(entry);
-        if let Ok(m) = fs::symlink_metadata(&live)
-            && !m.file_type().is_symlink()
-        {
-            let kind = if m.file_type().is_dir() {
-                "directory"
-            } else {
-                "file"
-            };
-            return Err(Error::Other(format!(
-                "~/.codex/{entry} is a real {kind}, not a managed symlink; run `init` first"
-            )));
-        }
+        refuse_real_entry(paths, entry)?;
     }
 
     // Phase 2: repoint each entry (each atomic; see the group-atomicity note above).
@@ -56,7 +44,29 @@ pub fn point_switched_entries(paths: &Paths, alias: &str) -> Result<()> {
             fs::remove_file(&target)?;
         }
         ensure_switched_target(&target, entry)?;
+        // Re-check just before the swap: a codex token refresh may have replaced the entry with
+        // a real file since phase 1 looked (fully closing the race needs renamex_np(RENAME_EXCL)).
+        refuse_real_entry(paths, entry)?;
         atomic_symlink(&paths.codex_home().join(entry), &target)?;
+    }
+    Ok(())
+}
+
+/// Error unless `~/.codex/<entry>` is a managed symlink or absent — a real file/dir there is
+/// user data only `init` may adopt.
+fn refuse_real_entry(paths: &Paths, entry: &str) -> Result<()> {
+    let live = paths.codex_home().join(entry);
+    if let Ok(m) = fs::symlink_metadata(&live)
+        && !m.file_type().is_symlink()
+    {
+        let kind = if m.file_type().is_dir() {
+            "directory"
+        } else {
+            "file"
+        };
+        return Err(Error::NotInitialized(format!(
+            "~/.codex/{entry} is a real {kind}, not a managed symlink; run `init` first"
+        )));
     }
     Ok(())
 }
@@ -66,7 +76,7 @@ fn ensure_switched_target(target: &Path, entry: &str) -> Result<()> {
         return Ok(());
     }
     match entry {
-        "auth.json" => Err(Error::Other(format!(
+        "auth.json" => Err(Error::MissingAuth(format!(
             "account is missing auth.json: {}",
             target.display()
         ))),

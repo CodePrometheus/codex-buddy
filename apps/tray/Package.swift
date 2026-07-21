@@ -20,5 +20,9 @@ let package = Package(
             name: "CodexBuddyTray",
             dependencies: ["CodexBuddyFFI"]
         ),
+        .testTarget(
+            name: "CodexBuddyTrayTests",
+            dependencies: ["CodexBuddyTray"]
+        ),
     ]
 )

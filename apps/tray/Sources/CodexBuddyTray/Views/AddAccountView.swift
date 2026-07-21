@@ -39,7 +39,6 @@ struct AddAccountView: View {
         .foregroundStyle(Theme.inkMuted)
         .padding(10)
         .contentShape(RoundedRectangle(cornerRadius: Theme.rowCorner))
-        .background(RoundedRectangle(cornerRadius: Theme.rowCorner, style: .continuous).fill(Color.clear))
     }
 
     private var form: some View {
@@ -66,7 +65,7 @@ struct AddAccountView: View {
                 .foregroundStyle(Theme.accentInk)
                 .frame(maxWidth: .infinity)
                 .padding(10)
-                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 14))
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.controlCorner))
 
                 Button("Cancel", action: cancelLogin)
                     .buttonStyle(.plain)
@@ -78,8 +77,8 @@ struct AddAccountView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 12.5))
                     .padding(9)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.hairline, lineWidth: 1))
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.controlCorner))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.controlCorner).strokeBorder(Theme.hairline, lineWidth: 1))
                     .focused($aliasFocused)
                     .onAppear { aliasFocused = true }
                     .onSubmit(startLogin)
@@ -92,7 +91,7 @@ struct AddAccountView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.accentInk)
                 .padding(10)
-                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 14))
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.controlCorner))
                 .disabled(alias.trimmingCharacters(in: .whitespaces).isEmpty)
 
                 Button("Import an existing auth.json") { importFile() }
@@ -104,7 +103,7 @@ struct AddAccountView: View {
             }
         }
         .padding(14)
-        .background(Theme.chip, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Theme.chip, in: RoundedRectangle(cornerRadius: Theme.formCorner, style: .continuous))
     }
 
     private func startLogin() {

@@ -9,8 +9,9 @@ set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/build/Codex Buddy.app"
 # Version and arch flags are overridable so CI can stamp the tag and build universal; the
-# defaults keep a plain local `build-app.sh` fast (native arch) and working.
-VERSION="${CODEX_BUDDY_VERSION:-0.2.1}"
+# defaults keep a plain local `build-app.sh` fast (native arch) and true to the workspace
+# version instead of a hardcoded literal that drifts.
+VERSION="${CODEX_BUDDY_VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/../../Cargo.toml" | head -1)}"
 SWIFT_ARCH_FLAGS="${SWIFT_ARCH_FLAGS:-}"
 
 cd "$ROOT"
