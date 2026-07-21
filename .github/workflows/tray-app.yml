@@ -4,12 +4,18 @@ name: Tray app
 # a job there would reintroduce the drift we just removed. This builds the menu-bar app's .app
 # bundle and attaches it (zipped) to the GitHub Release.
 #
-# Triggers on `release: published` — cargo-dist creates the Release during the tag run, so waiting
-# for it to publish avoids racing the asset upload against a Release that doesn't exist yet.
+# Chained off the "Release" workflow's completion (not `release: published`, not a bare tag push):
+#   - `release: published` never fires — cargo-dist creates the Release with the default
+#     GITHUB_TOKEN and GitHub suppresses events for token-made changes (anti-recursion).
+#   - `workflow_run` fires only AFTER Release finishes, so the Release already exists — no polling.
+# The tag comes from `git tag --points-at HEAD` (reliable), not `workflow_run.head_branch` (which
+# is often empty for tag-triggered upstreams).
+#
 # The .app is ad-hoc signed only (not notarized); first launch needs right-click → Open.
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -21,16 +27,37 @@ permissions:
 
 jobs:
   build:
+    # Manual dispatch always; otherwise only a successful Release that was triggered by a tag push
+    # (release.yml's only `push` trigger is tags, so event == 'push' means a version tag).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     runs-on: macos-14
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # workflow_run checks out the default branch by default; for the auto path we want the exact
+      # commit that Release ran on (the tagged one). fetch-tags lets `git tag --points-at` see it.
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Resolve tag
         id: tag
         run: |
-          tag="${{ github.event.release.tag_name || github.event.inputs.tag }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            # The tag on the checked-out commit; take the highest if a commit carries several.
+            tag="$(git tag --points-at HEAD --sort=-version:refname | head -n1)"
+          fi
+          if [ -z "$tag" ]; then
+            echo "no tag found on HEAD; nothing to attach to" >&2
+            exit 1
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
