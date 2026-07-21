@@ -2,18 +2,28 @@ import AppKit
 import Combine
 import SwiftUI
 
+/// A borderless `NSWindow` refuses key status by default, so the panel never got
+/// `didResignKey` (no auto-close on outside clicks) and its text fields could not take focus.
+private final class PanelWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+}
+
 /// Owns the status item directly instead of `MenuBarExtra`, which can't tell left-click from
 /// right-click: left opens the panel, right pops a plain system menu (About / Quit).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = AccountStore()
+    let appearance = AppearanceController()
 
     private var statusItem: NSStatusItem!
     private var panelWindow: NSWindow?
     private var storeSubscription: AnyCancellable?
+    private var panelClosedAt: Date?
+    private lazy var statusBarIcon = Self.makeStatusBarIcon()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        appearance.apply()
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.target = self
@@ -32,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusItemTitle() {
         guard let button = statusItem.button else { return }
-        button.image = NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: "codex-buddy")
+        button.image = statusBarIcon
         button.imagePosition = .imageLeading
 
         guard let account = store.activeAccount else {
@@ -97,6 +107,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.orderOut(nil)
             return
         }
+        // Clicking the status item while the panel is open resigns key first, which already
+        // closed it — without this guard the same click would immediately reopen it.
+        if let closedAt = panelClosedAt, Date().timeIntervalSince(closedAt) < 0.25 { return }
         showPanel()
     }
 
@@ -118,8 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makePanelWindow() -> NSWindow {
-        let hosting = NSHostingView(rootView: TrayPanel(store: store))
-        let window = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
+        let hosting = NSHostingView(rootView: TrayPanel(store: store, appearance: appearance))
+        let window = PanelWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = hosting
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -136,5 +149,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func panelResignedKey() {
         panelWindow?.orderOut(nil)
+        panelClosedAt = Date()
+    }
+
+    /// Renders the `>_` mark (same shape as the header wordmark's "u") as a template NSImage for
+    /// the status item — AppKit tints template images to match the current menu bar appearance
+    /// and highlight state, so no manual light/dark handling is needed here.
+    private static func makeStatusBarIcon() -> NSImage {
+        let size = NSSize(width: StatusBarMarkView.width, height: StatusBarMarkView.height)
+        let renderer = ImageRenderer(content: StatusBarMarkView().frame(width: size.width, height: size.height))
+        renderer.scale = 3
+        let image = renderer.nsImage ?? NSImage()
+        image.size = size
+        image.isTemplate = true
+        return image
+    }
+}
+
+/// Standalone rendering of the header wordmark's `>_` mark, re-baselined to its own origin.
+private struct StatusBarMarkView: View {
+    /// Ink bounds in wordmark space — x 118...181.856, y 96...169.6. These include the 8pt halo
+    /// the 16pt stroke adds around the chevron path; sizing to the bare path instead (as this
+    /// did originally) clipped the chevron's round caps flat and stretched the mark.
+    private static let originX: CGFloat = 118
+    private static let originY: CGFloat = 96
+    private static let inkWidth: CGFloat = 63.856
+    private static let inkHeight: CGFloat = 73.6
+
+    static let height: CGFloat = 18
+    static let width = inkWidth * height / inkHeight
+
+    var body: some View {
+        ZStack {
+            BuddyChevronShape()
+                .offset(x: -Self.originX, y: -Self.originY)
+                .stroke(Color.black, style: StrokeStyle(lineWidth: 16, lineCap: .round, lineJoin: .round))
+            RoundedRectangle(cornerRadius: 4.5)
+                .fill(Color.black)
+                .frame(width: 17.856, height: 9)
+                .position(x: 164 - Self.originX + 17.856 / 2, y: 128 - Self.originY + 9 / 2)
+        }
+        .frame(width: Self.inkWidth, height: Self.inkHeight)
+        .scaleEffect(Self.height / Self.inkHeight)
+        .frame(width: Self.width, height: Self.height)
     }
 }

@@ -18,12 +18,10 @@ install-updater = false
 # Don't auto-pick a README (picks README.es.md over README.md); list files explicitly instead
 auto-includes = false
 include = ["README.md", "LICENSE"]
-# release.yml has a hand patch (checkout `ref: main` in publish-homebrew-formula) that `dist
-# generate` doesn't know how to produce, since the tap is this same repo; allow that drift instead
-# of `dist` refusing to run because the committed file doesn't match its generator output.
-allow-dirty = ["ci"]
-# The Homebrew tap to publish the formula to (this same repo)
-tap = "CodePrometheus/codex-buddy"
+# The Homebrew tap to publish the formula to — a standalone `homebrew-*` repo, so the generated
+# install hint (`brew install CodePrometheus/tap/codex-buddy`) is correct and no `release.yml`
+# hand-patch is needed.
+tap = "CodePrometheus/homebrew-tap"
 # The Homebrew formula name
 formula = "codex-buddy"
 # Publish the Homebrew formula on release

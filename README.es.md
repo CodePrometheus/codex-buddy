@@ -24,13 +24,10 @@ o corre en simultáneo, sin re-logins.
 
 ## Instalación
 
-**Homebrew.** El tap es este mismo repositorio (no uno con prefijo `homebrew-`), así que la
-primera vez hace falta una URL de tap explícita y confiar en él una sola vez:
+**Homebrew.**
 
 ```sh
-brew tap CodePrometheus/codex-buddy https://github.com/CodePrometheus/codex-buddy
-brew trust codeprometheus/codex-buddy
-brew install codex-buddy
+brew install CodePrometheus/tap/codex-buddy
 ```
 
 **Script de shell.** Descarga un binario precompilado, sin necesidad de Homebrew:

@@ -36,8 +36,39 @@ struct AccountRow: View {
             AvatarView(initial: account.initial, hue: hue, size: 32)
             aliasAndEmail
             Spacer(minLength: 6)
-            trailingCluster
+            if showActions {
+                actionBar
+            } else {
+                trailingCluster
+            }
         }
+    }
+
+    private var actionBar: some View {
+        RowActionBar(
+            isActive: account.isActive,
+            onRename: {
+                showActions = false
+                renameText = account.alias
+                isRenaming = true
+            },
+            onCopyPath: {
+                showActions = false
+                copyHomePath()
+            },
+            onRunInTerminal: {
+                showActions = false
+                TerminalLauncher.run(alias: account.alias)
+                onToast("Opened Terminal running codex-buddy run \(account.alias)")
+            },
+            onRemove: {
+                showActions = false
+                isConfirmingRemove = true
+            },
+            onDismiss: { showActions = false }
+        )
+        .fixedSize()
+        .transition(.opacity)
     }
 
     /// Fixed-size so it's never the thing that gets squeezed — `aliasAndEmail` truncates first.
@@ -108,38 +139,18 @@ struct AccountRow: View {
 
     private var overflowButton: some View {
         Button {
-            showActions = true
+            withAnimation(.easeOut(duration: 0.15)) { showActions = true }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 13, weight: .medium))
-                .frame(width: 22, height: 22)
+                .frame(width: 26, height: 26)
+                // Without this the hit area is the glyph's own ink — three dots roughly 13x4pt —
+                // not the frame, which made the button very hard to land on.
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(Theme.inkMuted)
-        .opacity(isHovering || showActions ? 1 : 0.55)
-        .popover(isPresented: $showActions, arrowEdge: .bottom) {
-            RowActionBar(
-                isActive: account.isActive,
-                onRename: {
-                    showActions = false
-                    renameText = account.alias
-                    isRenaming = true
-                },
-                onCopyPath: {
-                    showActions = false
-                    copyHomePath()
-                },
-                onRunInTerminal: {
-                    showActions = false
-                    TerminalLauncher.run(alias: account.alias)
-                    onToast("Opened Terminal running codex-buddy run \(account.alias)")
-                },
-                onRemove: {
-                    showActions = false
-                    isConfirmingRemove = true
-                }
-            )
-        }
+        .opacity(isHovering ? 1 : 0.55)
     }
 
     private var confirmRemoveRow: some View {

@@ -19,12 +19,10 @@
 
 ## 安装
 
-**Homebrew。** tap 就是本仓库本身(不是 `homebrew-` 前缀命名),第一次需要显式 tap URL 并信任一次:
+**Homebrew。**
 
 ```sh
-brew tap CodePrometheus/codex-buddy https://github.com/CodePrometheus/codex-buddy
-brew trust codeprometheus/codex-buddy
-brew install codex-buddy
+brew install CodePrometheus/tap/codex-buddy
 ```
 
 **Shell 脚本。** 直接下载预编译二进制,不需要 Homebrew:

@@ -17,9 +17,25 @@ enum Theme {
     static let accentInk = dynamic(light: 0xFFFFFF, dark: 0x3A1620)
     static let accentSoft = dynamic(light: 0xB2596A, dark: 0xE6A6AF, lightAlpha: 0.16, darkAlpha: 0.22)
 
+    /// Wordmark-only letter color. Deliberately not `ink`: in light mode the letters run warm
+    /// (berry brown) so they sit in the same family as the pink `>_` gradient below, where the
+    /// neutral-cool `ink` read as hard against it.
+    static let brandInk = dynamic(light: 0x4A2E36, dark: 0xECE6DB)
+
+    /// Gradient stops for the wordmark's `>_` mark — light is a sakura pink ramp, dark warms
+    /// into apricot. The two modes are different gradients, not one gradient's light/dark pair.
+    static let brandMarkStart = dynamic(light: 0xD4708F, dark: 0xDE95A6)
+    static let brandMarkEnd = dynamic(light: 0xF3B6C8, dark: 0xF2CB96)
+
     static let success = dynamic(light: 0x4FA968, dark: 0x7FD99A)
     static let warning = dynamic(light: 0xE3A23D, dark: 0xF4C876)
     static let critical = dynamic(light: 0xE2685C, dark: 0xFF9187)
+
+    /// Sits between the panel's material and its content. `.regularMaterial` is translucent, so
+    /// on its own the panel's base color is whatever is behind the window — a dark desktop drags
+    /// a light panel down to grey and swallows `inkFaint`. This layer keeps the base predictable
+    /// while the material still supplies the blur.
+    static let panelBackground = dynamic(light: 0xFCFAF5, dark: 0x201F1C, lightAlpha: 0.88, darkAlpha: 0.88)
 
     /// A HUD-style toast: dark chip in light mode, light chip in dark mode — always contrasty,
     /// independent of the panel's own background.

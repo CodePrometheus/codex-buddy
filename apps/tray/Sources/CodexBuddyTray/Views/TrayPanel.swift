@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TrayPanel: View {
     @ObservedObject var store: AccountStore
+    @ObservedObject var appearance: AppearanceController
 
     @State private var showDoctor = false
     @State private var toast: String?
@@ -20,6 +21,7 @@ struct TrayPanel: View {
         }
         .overlay(alignment: .bottom) { toastView }
         .frame(width: Theme.panelWidth)
+        .background(Theme.panelBackground)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: Theme.panelCorner, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.panelCorner, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
@@ -33,7 +35,7 @@ struct TrayPanel: View {
 
     private var mainContent: some View {
         VStack(spacing: 0) {
-            HeaderView(doctorChecks: store.doctorChecks) {
+            HeaderView(doctorChecks: store.doctorChecks, appearance: appearance) {
                 withAnimation(.easeOut(duration: 0.2)) { showDoctor = true }
             }
 
