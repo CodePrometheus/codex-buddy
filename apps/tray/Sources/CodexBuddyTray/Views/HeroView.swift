@@ -1,7 +1,7 @@
 import CodexBuddyFFI
 import SwiftUI
 
-/// The active account: identity, dual usage ring, and a running-in-parallel callout.
+/// The active account: identity and dual usage ring.
 struct HeroView: View {
     let account: Account
     let hue: Theme.AccountHue
@@ -31,17 +31,6 @@ struct HeroView: View {
                     }
                 }
 
-                if account.isRunning {
-                    HStack(spacing: 6) {
-                        Circle().fill(Theme.success).frame(width: 6, height: 6)
-                        Text("Running in parallel")
-                    }
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.success)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(Theme.success.opacity(0.16), in: Capsule())
-                }
             }
 
             Spacer(minLength: 12)
