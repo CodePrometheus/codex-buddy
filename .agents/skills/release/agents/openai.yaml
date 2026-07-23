@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release codex-buddy"
+  short_description: "Release codex-buddy with checks and monitoring"
+  default_prompt: "Use $release to publish the next codex-buddy patch release safely."
