@@ -19,29 +19,63 @@ struct AccountRow: View {
         Group {
             if isConfirmingRemove {
                 confirmRemoveRow
+                    .padding(10)
             } else {
                 normalRow
             }
         }
-        .padding(10)
         .background(
             RoundedRectangle(cornerRadius: Theme.rowCorner, style: .continuous)
-                .fill(account.isActive ? Theme.accentSoft : (isHovering ? Theme.chip : .clear))
+                .fill(account.isActive ? Theme.rowActive : (isHovering ? Theme.chip : .clear))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.rowCorner, style: .continuous)
+                .strokeBorder(account.isActive ? Theme.rowActiveBorder : .clear, lineWidth: 1)
         )
         .onHover { isHovering = $0 }
     }
 
     private var normalRow: some View {
+        HStack(spacing: 7) {
+            switchTarget
+            if showActions {
+                actionBar
+                    .padding(.trailing, 10)
+            } else {
+                overflowButton
+                    .padding(.trailing, 10)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var switchTarget: some View {
+        if isRenaming {
+            switchTargetContent
+        } else {
+            Button(action: activateAccount) {
+                switchTargetContent
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                account.isActive ? "\(account.alias), current account" : "Switch to \(account.alias)"
+            )
+        }
+    }
+
+    private var switchTargetContent: some View {
         HStack(spacing: 10) {
             AvatarView(initial: account.initial, hue: hue, size: 32)
             aliasAndEmail
             Spacer(minLength: 6)
-            if showActions {
-                actionBar
-            } else {
-                trailingCluster
+            if !showActions {
+                accountStatus
             }
         }
+        .padding(.leading, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     private var actionBar: some View {
@@ -74,7 +108,7 @@ struct AccountRow: View {
     }
 
     /// Fixed-size so it's never the thing that gets squeezed — `aliasAndEmail` truncates first.
-    private var trailingCluster: some View {
+    private var accountStatus: some View {
         HStack(spacing: 7) {
             usageBadge
             if account.isRunning {
@@ -82,11 +116,10 @@ struct AccountRow: View {
                     .help("Running via parallel session")
             }
             if account.isActive {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .bold))
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.accent)
             }
-            overflowButton
         }
         .fixedSize()
     }
@@ -117,25 +150,24 @@ struct AccountRow: View {
                 }
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard !isRenaming else { return }
-            if !store.switchTo(account.alias), let error = store.lastError {
-                onToast(error)
-            }
-        }
     }
 
     @ViewBuilder
     private var usageBadge: some View {
         if let usage = account.tightestUsage {
-            HStack(spacing: 2) {
+            HStack(spacing: 3) {
                 Text("\(Int(usage.remainingPercent))%")
                     .foregroundStyle(Theme.severity(remainingPercent: usage.remainingPercent))
-                Text("·\(usage.label)")
+                Text(usage.label)
                     .foregroundStyle(Theme.inkFaint)
             }
-            .font(.system(size: 11.5, weight: .semibold))
+            .font(.system(size: 11, weight: .semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Theme.severity(remainingPercent: usage.remainingPercent).opacity(0.1),
+                in: Capsule()
+            )
         }
     }
 
@@ -194,6 +226,15 @@ struct AccountRow: View {
         }
     }
 
+    private func activateAccount() {
+        guard !account.isActive else { return }
+        if store.switchTo(account.alias) {
+            onToast("Switched to \(account.alias)")
+        } else if let error = store.lastError {
+            onToast(error)
+        }
+    }
+
     private func copyHomePath() {
         guard let path = store.homeDirectory(for: account.alias) else {
             onToast("Could not read the account's home directory")
@@ -202,20 +243,5 @@ struct AccountRow: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(path, forType: .string)
         onToast("Copied \(path)")
-    }
-}
-
-private struct PlanChip: View {
-    let text: String
-    let hue: Theme.AccountHue
-
-    var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 9.5, weight: .semibold))
-            .tracking(0.4)
-            .foregroundStyle(hue.ink)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
-            .background(hue.tint, in: Capsule())
     }
 }

@@ -5,6 +5,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use serde::Serialize;
+
 use crate::auth::load_auth_info;
 use crate::config_check::ensure_file_store;
 use crate::error::{Error, Result};
@@ -19,7 +21,7 @@ use crate::registry::{self, AccountRecord, Registry, now_epoch};
 /// `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — none of the Homebrew/nvm/asdf directories a
 /// terminal session picks up from shell profile files. `codex-buddy` itself runs fine either
 /// way; it's specifically this child process that needs the fuller PATH to find `codex`.
-fn codex_command() -> Command {
+pub(crate) fn codex_command() -> Command {
     let mut cmd = Command::new("codex");
     if !is_on_path("codex")
         && let Some(path) = login_shell_path()
@@ -69,12 +71,11 @@ fn resolve_dir(reg: &Registry, alias: &str) -> Result<String> {
 }
 
 /// Display view of an account.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AccountView {
     pub alias: String,
     pub email: Option<String>,
     pub plan: Option<String>,
-    pub account_key: String,
     pub is_active: bool,
     pub usage: Option<crate::usage::Usage>,
     pub last_used_at: Option<i64>,
@@ -86,21 +87,7 @@ pub struct AccountView {
 /// concurrent switches (tray + CLI) serialize instead of leaving the filesystem pointing at one
 /// account while the registry records another.
 pub fn switch(paths: &Paths, alias: &str) -> Result<()> {
-    registry::update(paths, |r| {
-        let dir = resolve_dir(r, alias)?;
-        if !paths.account_auth(&dir).exists() {
-            return Err(Error::MissingAuth(format!(
-                "account {alias} has no auth.json"
-            )));
-        }
-        // point_switched_entries refuses to clobber a real ~/.codex/auth.json (run `init` first).
-        point_switched_entries(paths, &dir)?;
-        r.set_active(alias);
-        if let Some(m) = r.find_mut(alias) {
-            m.last_used_at = Some(now_epoch());
-        }
-        Ok(())
-    })
+    registry::update(paths, |r| switch_in_registry(paths, r, alias))
 }
 
 /// Switch back to the previous account (`switch -`).
@@ -111,6 +98,54 @@ pub fn switch_previous(paths: &Paths) -> Result<()> {
         .ok_or_else(|| Error::Other("no previous account to switch back to".into()))?
         .to_string();
     switch(paths, &prev)
+}
+
+/// Switch to the next account in registry order, wrapping at the end.
+///
+/// Selection and switching happen under one registry lock so another CLI or the tray cannot
+/// change the active account between those two steps.
+pub fn switch_next(paths: &Paths) -> Result<String> {
+    registry::update(paths, |r| {
+        let next = match r.active() {
+            Some(active) => {
+                let index = r
+                    .accounts
+                    .iter()
+                    .position(|a| a.alias == active)
+                    .ok_or_else(|| {
+                        Error::Other(format!(
+                            "active account `{active}` is not present in the registry"
+                        ))
+                    })?;
+                &r.accounts[(index + 1) % r.accounts.len()].alias
+            }
+            None => {
+                &r.accounts
+                    .first()
+                    .ok_or_else(|| Error::Other("no accounts to switch to".into()))?
+                    .alias
+            }
+        }
+        .clone();
+        switch_in_registry(paths, r, &next)?;
+        Ok(next)
+    })
+}
+
+fn switch_in_registry(paths: &Paths, reg: &mut Registry, alias: &str) -> Result<()> {
+    let dir = resolve_dir(reg, alias)?;
+    if !paths.account_auth(&dir).exists() {
+        return Err(Error::MissingAuth(format!(
+            "account {alias} has no auth.json"
+        )));
+    }
+    // point_switched_entries refuses to clobber a real ~/.codex/auth.json (run `init` first).
+    point_switched_entries(paths, &dir)?;
+    reg.set_active(alias);
+    if let Some(m) = reg.find_mut(alias) {
+        m.last_used_at = Some(now_epoch());
+    }
+    Ok(())
 }
 
 /// Run codex under the given account (`CODEX_HOME=<account dir>`), returning its exit code.
@@ -144,6 +179,15 @@ pub fn run(paths: &Paths, alias: &str, args: &[OsString]) -> Result<i32> {
 pub fn list(paths: &Paths) -> Result<Vec<AccountView>> {
     let reg = registry::load(&paths.registry_file())?;
     list_from(paths, &reg)
+}
+
+/// One account with the same metadata and local usage view returned by [`list`].
+pub fn get(paths: &Paths, alias: &str) -> Result<AccountView> {
+    let reg = registry::load(&paths.registry_file())?;
+    let rec = reg
+        .find(alias)
+        .ok_or_else(|| Error::AccountNotFound(alias.to_string()))?;
+    Ok(view_of(paths, rec, reg.active() == Some(alias), true))
 }
 
 /// Same as [`list`], but reuses an already-loaded registry — for callers (like the FFI layer)
@@ -189,7 +233,6 @@ fn view_of(paths: &Paths, rec: &AccountRecord, is_active: bool, with_usage: bool
         alias: rec.alias.clone(),
         email,
         plan,
-        account_key: rec.account_key.clone(),
         is_active,
         usage,
         last_used_at: rec.last_used_at,
@@ -215,14 +258,7 @@ pub fn add(paths: &Paths, alias: &str) -> Result<()> {
 /// Validate and build the account dir (no login yet). Returns the dir to use as CODEX_HOME.
 fn add_prepare(paths: &Paths, alias: &str) -> Result<PathBuf> {
     validate_alias(alias)?;
-    ensure_file_store(&paths.codex_config())?;
-    // Require init: ~/.codex/auth.json must already be a managed symlink.
-    let is_symlink = fs::symlink_metadata(paths.codex_auth())
-        .map(|m| m.file_type().is_symlink())
-        .unwrap_or(false);
-    if !is_symlink {
-        return Err(Error::NotInitialized("run init before add".into()));
-    }
+    ensure_account_changes_ready(paths)?;
     let reg = registry::load(&paths.registry_file())?;
     if reg.find(alias).is_some() {
         return Err(Error::AccountExists(alias.to_string()));
@@ -235,6 +271,19 @@ fn add_prepare(paths: &Paths, alias: &str) -> Result<PathBuf> {
     fs::create_dir_all(&account_dir)?;
     build_account_dir(paths, alias)?;
     Ok(account_dir)
+}
+
+pub(crate) fn ensure_account_changes_ready(paths: &Paths) -> Result<()> {
+    ensure_file_store(&paths.codex_config())?;
+    let is_symlink = fs::symlink_metadata(paths.codex_auth())
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false);
+    if !is_symlink {
+        return Err(Error::NotInitialized(
+            "run init before adding or importing accounts".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// After login: parse the new auth, reject a duplicate account key, write the registry.

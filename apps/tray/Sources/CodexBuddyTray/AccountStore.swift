@@ -10,10 +10,84 @@ final class AccountStore: ObservableObject {
     @Published private(set) var doctorChecks: [DoctorCheck] = []
     @Published var lastError: String?
 
+    /// Opt-in: when on, usage is fetched live by driving `codex app-server` per account.
+    /// Off by default — the tray stays fully local until the user flips it.
+    @Published var liveUsageEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(liveUsageEnabled, forKey: Self.liveUsageKey)
+            if liveUsageEnabled {
+                refreshLiveUsage(force: true)
+            } else {
+                liveUsage = [:]
+                refresh()
+            }
+        }
+    }
+    @Published private(set) var liveRefreshInFlight = false
+
+    /// Successful live fetches per alias; local session data stays the fallback for the rest.
+    private var liveUsage: [String: [UsageWindow]] = [:]
+    private var lastLiveRefresh: Date?
+    private static let liveUsageKey = "liveUsageViaCodex"
+    /// Panel-open refreshes reuse a recent result; only an explicit "Refresh now" bypasses this.
+    private static let liveRefreshInterval: TimeInterval = 300
+
+    init() {
+        liveUsageEnabled = UserDefaults.standard.bool(forKey: Self.liveUsageKey)
+    }
+
     var activeAccount: Account? { accounts.first(where: \.isActive) }
 
     func refresh() {
-        run { try listAccounts() } onSuccess: { self.accounts = $0 }
+        run { try listAccounts() } onSuccess: { self.accounts = self.withLiveUsage($0) }
+    }
+
+    /// Refetch live usage for every account, one `codex app-server` probe each, in parallel off
+    /// the main actor. Merges whatever succeeded; a failure surfaces once without wiping rows.
+    func refreshLiveUsage(force: Bool = false) {
+        guard liveUsageEnabled, !liveRefreshInFlight else { return }
+        if !force, let last = lastLiveRefresh,
+           Date().timeIntervalSince(last) < Self.liveRefreshInterval {
+            return
+        }
+        liveRefreshInFlight = true
+        let aliases = accounts.map(\.alias)
+        Task {
+            let (fetched, failure) = await Self.fetchLiveUsage(aliases)
+            liveUsage.merge(fetched) { _, new in new }
+            lastLiveRefresh = Date()
+            liveRefreshInFlight = false
+            accounts = withLiveUsage(accounts)
+            if let failure { lastError = failure }
+        }
+    }
+
+    private func withLiveUsage(_ accounts: [Account]) -> [Account] {
+        guard liveUsageEnabled else { return accounts }
+        return accounts.map { account in
+            var merged = account
+            if let live = liveUsage[account.alias] { merged.usage = live }
+            return merged
+        }
+    }
+
+    private nonisolated static func fetchLiveUsage(
+        _ aliases: [String]
+    ) async -> ([String: [UsageWindow]], String?) {
+        await withTaskGroup(of: (String, Result<RemoteUsage, Error>).self) { group in
+            for alias in aliases {
+                group.addTask { (alias, Result { try fetchRemoteUsage(alias: alias) }) }
+            }
+            var fetched: [String: [UsageWindow]] = [:]
+            var failure: String?
+            for await (alias, result) in group {
+                switch result {
+                case .success(let usage): fetched[alias] = usage.windows
+                case .failure(let error): failure = "Live usage for \(alias): \(error)"
+                }
+            }
+            return (fetched, failure)
+        }
     }
 
     func refreshDoctor() {

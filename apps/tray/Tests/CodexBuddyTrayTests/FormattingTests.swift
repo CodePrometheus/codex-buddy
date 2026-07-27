@@ -15,10 +15,12 @@ final class FormattingTests: XCTestCase {
         )
     }
 
-    func testWindowLabelBoundary() {
+    func testWindowLabels() {
         XCTAssertEqual(window(300, used: 0).label, "5h")
-        XCTAssertEqual(window(301, used: 0).label, "7d")
         XCTAssertEqual(window(10080, used: 0).label, "7d")
+        XCTAssertEqual(window(1440, used: 0).label, "1d")
+        XCTAssertEqual(window(120, used: 0).label, "2h")
+        XCTAssertEqual(window(90, used: 0).label, "90m")
     }
 
     func testRemainingPercentClampsAtZero() {
@@ -62,5 +64,14 @@ final class FormattingTests: XCTestCase {
         for mode in AppearanceMode.allCases {
             XCTAssertEqual(AppearanceMode(rawValue: mode.rawValue), mode)
         }
+    }
+
+    func testVersionCompare() {
+        XCTAssertTrue(VersionCompare.isNewer("0.3.0", than: "0.2.5"))
+        XCTAssertTrue(VersionCompare.isNewer("1.0", than: "0.9.9"))
+        XCTAssertTrue(VersionCompare.isNewer("0.2.5.1", than: "0.2.5"))
+        XCTAssertFalse(VersionCompare.isNewer("0.2.5", than: "0.2.5"))
+        XCTAssertFalse(VersionCompare.isNewer("0.2.4", than: "0.2.5"))
+        XCTAssertFalse(VersionCompare.isNewer("0.2.5", than: "0.2.5.0"))
     }
 }

@@ -1,19 +1,28 @@
-# codex-buddy
+<p align="center">
+  <img src="docs/logo.png" width="120" alt="codex-buddy" />
+</p>
 
-**English** | [简体中文](README.zh-CN.md) | [Español](README.es.md)
+<h1 align="center">codex-buddy</h1>
 
-![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
-![Rust](https://img.shields.io/badge/rust-1.89%2B-orange.svg)
-![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
-![Binary](https://img.shields.io/badge/binary-461K-brightgreen.svg)
+<p align="center">
+  A <b>tiny, fast</b> way to run multiple <a href="https://developers.openai.com/codex">Codex CLI</a> accounts in parallel —<br/>
+  one <b>544 KB</b> binary, switch or run side by side, no re-logins, local by default.
+</p>
 
-A **tiny, fast** way to run multiple [Codex CLI](https://developers.openai.com/codex) accounts in
-parallel — one **461 KB** binary, switch or run side by side, no re-logins, nothing leaves your
-machine.
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" />
+  <img src="https://img.shields.io/badge/rust-1.89%2B-orange.svg" alt="Rust" />
+  <img src="https://img.shields.io/badge/platform-macOS-lightgrey.svg" alt="Platform" />
+  <img src="https://img.shields.io/badge/binary-544K-brightgreen.svg" alt="Binary" />
+</p>
+
+<p align="center">
+  <b>English</b> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.es.md">Español</a>
+</p>
 
 ## Features
 
-- **Tiny & fast** — a single 461 KB binary, just 4 direct dependencies, zero async / zero HTTP /
+- **Tiny & fast** — a single 544 KB binary, just 4 direct dependencies, zero async / zero HTTP /
   zero crypto. Switching accounts is an atomic `rename` (**instant**); probing which accounts are
   running in parallel uses a native syscall (~**2 ms**). The release binary is squeezed with
   `opt-level=z` + `lto` + `strip`.
@@ -21,8 +30,10 @@ machine.
   under its own account, fully isolated.
 - **Never triggers a re-login** — switch back and forth as much as you want; no forced logout, no
   risk of tripping anti-abuse detection.
-- **100% local** — no telemetry, no cloud dependency, no network calls at all; nothing leaves your
-  machine.
+- **Local by default** — no telemetry, and a CLI with zero network code. Live usage is strictly
+  opt-in, and even then the fetching is done by codex itself — see
+  [Live usage](#live-usage-optional). The menu bar app's only own network call is the update
+  check you trigger yourself.
 - **Safe by design** — setup backs up your existing login before touching it and rolls back on
   any failure; a one-command `doctor` check tells you if anything's off.
 - **Shared config, isolated logins** — `config.toml` and rules apply to every account; credentials
@@ -32,20 +43,23 @@ machine.
 
 Beyond the CLI, codex-buddy ships a native macOS menu bar app: click the icon and a panel shows
 each account's usage, which one is active, and which are running in parallel — one click to switch.
-**Just as tiny** — a single-arch app bundle is only **0.6 MB**.
+**Just as tiny** — a single-arch app bundle is well under a megabyte.
 
 <p align="center">
   <img src="docs/panel-light.png" width="380" alt="Panel (light)" />
   <img src="docs/panel-dark.png" width="380" alt="Panel (dark)" />
 </p>
 
-- **Dual usage rings** — see at a glance how much is left in the 5h / 7d windows, color-coded by
+- **Usage rings** — how much is left in each rate-limit window codex reports, color-coded by
   threshold.
+- **Live usage (opt-in)** — the bolt in the header enables fetching current numbers through codex
+  when the panel opens (throttled, parallel per account); local data stays the fallback. Off by
+  default.
 - **Account list** — per-account candy-color avatar, plan badge, parallel-running green dot, and a
   checkmark on the active one.
 - **Built-in Doctor** — self-check right in the panel; it expands a list only when something's off,
   with one-click copy of the report.
-- **Light / dark** — follows the system, or toggle light / dark yourself (the two panels above).
+- **Light / dark** — follows the system, or toggle light / dark yourself.
 - **Inline actions + Add account** — a row of icons per account to rename, copy `CODEX_HOME`, run
   in Terminal, or remove; "Add Account" expands in place, driving a real `codex login` or importing
   an existing `auth.json`.
@@ -100,9 +114,9 @@ Account 'personal' added. Use `codex-buddy switch personal`, or `codex-buddy run
 to run it in parallel.
 
 $ codex-buddy list
-  ALIAS      EMAIL                  PLAN  5H  1W       ACTIVE
-* work       alice@work.example     plus  -   12% (4d)  just now
-  personal   alice@personal.example pro   -   0% (6d)   2d ago
+  ALIAS     EMAIL                   PLAN  1W        LAST USED
+* work      alice@work.example      plus  12% (4d)  just now
+  personal  alice@personal.example  pro   0% (6d)   2d ago
 
 $ codex-buddy switch personal
 Switched to: personal  alice@personal.example  [pro]
@@ -132,7 +146,9 @@ $ codex-buddy run personal -- codex
 |---|---|
 | `init [alias] [--yes]` | Adopt the current `~/.codex` account |
 | `add <alias>` | Log in and adopt a new account |
-| `import <path> [--alias a]` | Adopt an account from an existing `auth.json` |
+| `import <auth.json> [--alias a] [--json]` | Import one account |
+| `import <directory> [--skip-existing] [--json]` | Import immediate `<alias>/auth.json` children; successful items are kept |
+| `export <alias> <path> [--force]` | Export one credential file with `0600` permissions |
 | `relogin <alias>` | Re-login an existing account (e.g. after token expiry) |
 | `rename <old> <new>` | Rename an account |
 | `remove <alias> [--yes]` | Remove an account (refuses to remove the active one) |
@@ -141,16 +157,66 @@ $ codex-buddy run personal -- codex
 
 | Command | Description |
 |---|---|
-| `list` | List accounts with usage |
-| `current` | Show the active account |
-| `switch <alias> \| -` | Switch account (`-` = previous) |
+| `list [--json]` | List accounts with usage |
+| `current [--json]` | Show the active account |
+| `usage [alias] [--remote] [--json]` | Show usage and whether it is fresh, expired, or missing |
+| `recommend [--remote] [--json]` | Recommend the account with the most headroom |
+| `switch <alias> \| - \| --next` | Switch account (`-` = previous, `--next` = cycle in registry order) |
 | `run <alias> -- <args>` | Run codex under an account, in parallel |
 | `path <alias>` | Print an account's `CODEX_HOME` |
-| `doctor` | Check setup health |
+| `doctor [--json]` | Check setup health |
+| `report [--json]` | Summarize accounts and health checks |
+
+Usage tables show a column per rate-limit window actually present in the data — codex's window
+set has changed upstream before, so nothing is hardcoded.
+
+Directory import deliberately scans one level only:
+
+```
+accounts/
+├── work/auth.json
+└── personal/auth.json
+```
+
+Each account is committed independently. The command prints `imported`, `skipped`, or `failed`
+for every item, keeps successful imports, and exits non-zero if any item failed.
+`--skip-existing` only skips an existing alias with the same account identity; it never replaces
+credentials.
+
+Exported `auth.json` files contain access and refresh tokens. codex-buddy creates them as `0600`,
+refuses symlink and managed `~/.codex-buddy` destinations, and requires `--force` to replace an
+existing regular file.
 
 Codex must be storing your login as a plain file, not in the system keychain — codex-buddy
 manages that file directly, so it needs it on disk. `init` and `add` check this automatically and
 tell you how to fix it (`cli_auth_credentials_store = "file"` in `~/.codex/config.toml`) if not.
+
+## Live usage (optional)
+
+By default every number codex-buddy shows comes from local session data: correct as of the last
+time that account ran codex, and labeled `fresh` / `expired` / `missing` honestly. When you want
+current numbers instead:
+
+```
+$ codex-buddy usage --remote
+  ALIAS     STATUS  1W
+  work      fresh   15% (5d)
+  personal  fresh   6% (4d)
+
+$ codex-buddy recommend --remote
+Recommended: personal
+  bottleneck: 1w with 94% remaining
+  1w: 6% used, 94% remaining, resets in 4d
+```
+
+`--remote` asks codex itself: codex-buddy starts `codex app-server` under each account's
+`CODEX_HOME`, reads that account's rate limits over its stdio protocol, and stops it. The network
+request is made by the official codex binary — its own client, its own auth, its own token
+refresh. codex-buddy never talks to any backend directly, holds no HTTP code, and sends nothing
+anywhere; that stays true with `--remote`.
+
+The menu bar app has the same switch behind the bolt icon ("Live usage via codex"), off by
+default and persisted once you flip it.
 
 ## License
 

@@ -6,7 +6,6 @@ fn view(alias: &str, active: bool, usage: Option<Usage>) -> AccountView {
         alias: alias.into(),
         email: Some(format!("{alias}@example.com")),
         plan: Some("pro".into()),
-        account_key: "k".into(),
         is_active: active,
         usage,
         last_used_at: None,
@@ -86,14 +85,17 @@ fn account_not_found_maps_to_the_not_found_case() {
 #[test]
 fn to_doctor_check_maps_every_level() {
     let pass = to_doctor_check(doctor::Check {
+        code: "pass".into(),
         level: Level::Pass,
         message: "ok".into(),
     });
     let warn = to_doctor_check(doctor::Check {
+        code: "warn".into(),
         level: Level::Warn,
         message: "hm".into(),
     });
     let fail = to_doctor_check(doctor::Check {
+        code: "fail".into(),
         level: Level::Fail,
         message: "bad".into(),
     });

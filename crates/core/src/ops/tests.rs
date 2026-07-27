@@ -88,6 +88,30 @@ fn switch_previous_without_history_errors() {
 }
 
 #[test]
+fn switch_next_uses_registry_order_and_wraps() {
+    let d = tempdir().unwrap();
+    let paths = setup(d.path());
+    assert_eq!(switch_next(&paths).unwrap(), "b");
+    assert_eq!(switch_next(&paths).unwrap(), "a");
+    assert_eq!(
+        fs::read_link(paths.codex_auth()).unwrap(),
+        paths.account_auth("a")
+    );
+}
+
+#[test]
+fn switch_next_uses_the_first_account_when_none_is_active() {
+    let d = tempdir().unwrap();
+    let paths = setup(d.path());
+    registry::update(&paths, |reg| {
+        reg.active_account = None;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(switch_next(&paths).unwrap(), "a");
+}
+
+#[test]
 fn list_and_current_resolve_metadata() {
     let d = tempdir().unwrap();
     let paths = setup(d.path());

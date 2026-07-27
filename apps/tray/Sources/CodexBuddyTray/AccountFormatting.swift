@@ -4,7 +4,17 @@ extension UsageWindow {
     /// The 5h/weekly boundary in minutes, mirroring core's `FIVE_HOUR_MINUTES`.
     static let fiveHourMinutes: Int64 = 300
 
-    var label: String { windowMinutes <= Self.fiveHourMinutes ? "5h" : "7d" }
+    /// Named labels for the known windows, generic day/hour/minute fallbacks otherwise — the
+    /// window set is whatever codex reports, and it has changed upstream before.
+    var label: String {
+        switch windowMinutes {
+        case Self.fiveHourMinutes: "5h"
+        case 10080: "7d"
+        case let m where m % 1440 == 0: "\(m / 1440)d"
+        case let m where m % 60 == 0: "\(m / 60)h"
+        default: "\(windowMinutes)m"
+        }
+    }
 
     /// codex reports how much of the window is *used*; the tray shows what's left, matching
     /// how the mockup — and the plain-language "46% left" framing — reads at a glance.

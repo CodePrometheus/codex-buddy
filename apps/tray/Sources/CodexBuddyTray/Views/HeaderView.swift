@@ -3,6 +3,7 @@ import SwiftUI
 
 struct HeaderView: View {
     let doctorChecks: [DoctorCheck]
+    @ObservedObject var store: AccountStore
     @ObservedObject var appearance: AppearanceController
     var onOpenDoctorDetail: () -> Void
 
@@ -13,11 +14,35 @@ struct HeaderView: View {
                 .frame(width: 700 * wordmarkScale, height: 260 * wordmarkScale)
             Spacer()
             DoctorPill(checks: doctorChecks, onOpenDetail: onOpenDoctorDetail)
+            liveUsageToggle
             appearanceToggle
         }
         .padding(.horizontal, 20)
         .padding(.top, 18)
         .padding(.bottom, 12)
+    }
+
+    /// Live usage is opt-in and worth explaining, so it lives behind a small menu instead of a
+    /// bare toggle: the label names the mechanism (codex itself does the fetching) and offers an
+    /// immediate refresh once enabled.
+    private var liveUsageToggle: some View {
+        Menu {
+            Toggle("Live usage via codex", isOn: $store.liveUsageEnabled)
+            Button("Refresh now") { store.refreshLiveUsage(force: true) }
+                .disabled(!store.liveUsageEnabled || store.liveRefreshInFlight)
+        } label: {
+            Image(systemName: store.liveUsageEnabled ? "bolt.fill" : "bolt")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(store.liveUsageEnabled ? Theme.accent : Theme.inkMuted)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Theme.chip))
+                .contentShape(Circle())
+                .opacity(store.liveRefreshInFlight ? 0.45 : 1)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .frame(width: 26, height: 26)
+        .help(store.liveUsageEnabled ? "Live usage on — fetched through codex" : "Live usage off — local data only")
     }
 
     /// A menu rather than a cycling button: the three modes all carry meaning when the system is

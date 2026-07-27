@@ -9,8 +9,11 @@ pub mod init;
 pub mod layout;
 pub mod ops;
 pub mod paths;
+pub mod recommend;
 pub mod registry;
+pub mod remote;
 pub mod running;
+pub mod transfer;
 pub mod usage;
 
 #[cfg(test)]

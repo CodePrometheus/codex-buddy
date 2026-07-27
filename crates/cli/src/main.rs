@@ -1,10 +1,8 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::io::{self, IsTerminal, Write};
-use std::path::PathBuf;
 use std::process::ExitCode;
 
-use codex_buddy_core::auth;
 use codex_buddy_core::doctor;
 use codex_buddy_core::init::{self, InitPlan};
 use codex_buddy_core::ops;
@@ -12,6 +10,9 @@ use codex_buddy_core::paths::{Paths, suggest_alias};
 use codex_buddy_core::registry::now_epoch;
 use codex_buddy_core::usage;
 use pico_args::Arguments;
+
+mod commands;
+mod output;
 
 type CliResult<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -74,14 +75,11 @@ fn run() -> CliResult<i32> {
             cmd_switch(args)?;
             Ok(0)
         }
-        Some("list") => {
-            cmd_list(args)?;
-            Ok(0)
-        }
-        Some("current") => {
-            cmd_current(args)?;
-            Ok(0)
-        }
+        Some("list") => cmd_list(args),
+        Some("current") => cmd_current(args),
+        Some("usage") => commands::insights::usage(args),
+        Some("recommend") => commands::insights::recommend(args),
+        Some("report") => commands::insights::report(args),
         Some("run") => cmd_run(args),
         Some("rename") => {
             cmd_rename(args)?;
@@ -91,8 +89,9 @@ fn run() -> CliResult<i32> {
             cmd_remove(args)?;
             Ok(0)
         }
-        Some("import") => {
-            cmd_import(args)?;
+        Some("import") => commands::transfer::import(args),
+        Some("export") => {
+            commands::transfer::export(args)?;
             Ok(0)
         }
         Some("relogin") => {
@@ -192,34 +191,50 @@ fn cmd_add(args: Arguments) -> CliResult<()> {
     Ok(())
 }
 
-fn cmd_switch(args: Arguments) -> CliResult<()> {
-    let Some(target) = positionals(args, 1, "codex-buddy switch <alias | ->")?
-        .into_iter()
-        .next()
-    else {
-        return usage_err("switch needs an account alias (or - for the previous one)");
-    };
-
+fn cmd_switch(mut args: Arguments) -> CliResult<()> {
+    let next = args.contains("--next");
+    let target = positionals(
+        args,
+        1,
+        "codex-buddy switch <alias | -> | codex-buddy switch --next",
+    )?
+    .into_iter()
+    .next();
+    if next && target.is_some() {
+        return usage_err("switch accepts either an account alias or --next, not both");
+    }
     let paths = Paths::from_env()?;
-    if target == "-" {
-        ops::switch_previous(&paths)?;
-    } else {
-        ops::switch(&paths, &target)?;
+    match target.as_deref() {
+        None if next => {
+            ops::switch_next(&paths)?;
+        }
+        Some("-") => ops::switch_previous(&paths)?,
+        Some(alias) => ops::switch(&paths, alias)?,
+        None => {
+            return usage_err(
+                "switch needs an account alias, - for the previous account, or --next",
+            );
+        }
     }
     match ops::current(&paths)? {
         Some(v) => println!("Switched to: {}", fmt_account(&v)),
-        None => println!("Switched to: {target}"),
+        None => println!("Switched."),
     }
     Ok(())
 }
 
-fn cmd_list(args: Arguments) -> CliResult<()> {
+fn cmd_list(mut args: Arguments) -> CliResult<i32> {
+    let json = args.contains("--json");
     positionals(args, 0, "codex-buddy list")?;
     let paths = Paths::from_env()?;
     let views = ops::list(&paths)?;
+    if json {
+        output::print_json(&views)?;
+        return Ok(0);
+    }
     if views.is_empty() {
         println!("No accounts yet; run `codex-buddy init`.");
-        return Ok(());
+        return Ok(0);
     }
 
     let s = Style::detect();
@@ -227,66 +242,82 @@ fn cmd_list(args: Arguments) -> CliResult<()> {
     let email_of = |v: &ops::AccountView| v.email.clone().unwrap_or_else(|| "-".into());
     let plan_of = |v: &ops::AccountView| v.plan.clone().unwrap_or_else(|| "-".into());
 
-    let aliases: Vec<String> = views.iter().map(|v| v.alias.clone()).collect();
-    let emails: Vec<String> = views.iter().map(email_of).collect();
-    let plans: Vec<String> = views.iter().map(plan_of).collect();
-    let w5: Vec<String> = views
+    // Usage columns follow the windows present in the data; codex's window set has changed
+    // upstream before (the 5h window disappeared), so none are hardcoded.
+    let mut minutes: Vec<i64> = views
         .iter()
-        .map(|v| fmt_window(&v.usage, usage::FIVE_HOUR_MINUTES, now))
+        .flat_map(|v| v.usage.iter().flat_map(|u| u.windows.iter()))
+        .map(|w| w.window_minutes)
         .collect();
-    let w1: Vec<String> = views
-        .iter()
-        .map(|v| fmt_window(&v.usage, usage::WEEKLY_MINUTES, now))
-        .collect();
+    minutes.sort_unstable();
+    minutes.dedup();
 
-    let width = |vals: &[String], head: &str| {
-        vals.iter()
-            .map(|s| s.chars().count())
-            .chain([head.chars().count()])
-            .max()
-            .unwrap()
+    let mut columns: Vec<(String, Vec<String>)> = vec![
+        (
+            "ALIAS".into(),
+            views.iter().map(|v| v.alias.clone()).collect(),
+        ),
+        ("EMAIL".into(), views.iter().map(email_of).collect()),
+        ("PLAN".into(), views.iter().map(plan_of).collect()),
+    ];
+    for mins in minutes {
+        columns.push((
+            fmt_window_label(mins).to_uppercase(),
+            views
+                .iter()
+                .map(|v| fmt_window(&v.usage, mins, now))
+                .collect(),
+        ));
+    }
+
+    let widths: Vec<usize> = columns
+        .iter()
+        .map(|(head, vals)| {
+            vals.iter()
+                .map(|s| s.chars().count())
+                .chain([head.chars().count()])
+                .max()
+                .unwrap()
+        })
+        .collect();
+    let padded = |cells: Vec<&str>| {
+        cells
+            .iter()
+            .zip(&widths)
+            .map(|(cell, w)| format!("{cell:<w$}"))
+            .collect::<Vec<_>>()
+            .join("  ")
     };
-    let alias_w = width(&aliases, "ALIAS");
-    let email_w = width(&emails, "EMAIL");
-    let plan_w = width(&plans, "PLAN");
-    let w5_w = width(&w5, "5H");
-    let w1_w = width(&w1, "1W");
 
-    println!(
-        "{}",
-        s.dim(&format!(
-            "  {:<alias_w$}  {:<email_w$}  {:<plan_w$}  {:<w5_w$}  {:<w1_w$}  LAST USED",
-            "ALIAS", "EMAIL", "PLAN", "5H", "1W"
-        ))
-    );
+    let heads = padded(columns.iter().map(|(head, _)| head.as_str()).collect());
+    println!("{}", s.dim(&format!("  {heads}  LAST USED")));
     for (i, v) in views.iter().enumerate() {
         let mark = if v.is_active { "*" } else { " " };
-        let line = format!(
-            "{mark} {:<alias_w$}  {:<email_w$}  {:<plan_w$}  {:<w5_w$}  {:<w1_w$}  {}",
-            aliases[i],
-            emails[i],
-            plans[i],
-            w5[i],
-            w1[i],
-            fmt_ago(v.last_used_at, now),
-        );
+        let cells = padded(columns.iter().map(|(_, vals)| vals[i].as_str()).collect());
+        let line = format!("{mark} {cells}  {}", fmt_ago(v.last_used_at, now));
         if v.is_active {
             println!("{line}");
         } else {
             println!("{}", s.dim(&line));
         }
     }
-    Ok(())
+    Ok(0)
 }
 
-fn cmd_current(args: Arguments) -> CliResult<()> {
+fn cmd_current(mut args: Arguments) -> CliResult<i32> {
+    let json = args.contains("--json");
     positionals(args, 0, "codex-buddy current")?;
     let paths = Paths::from_env()?;
-    match ops::current(&paths)? {
+    let current = ops::current(&paths)?;
+    if json {
+        output::print_json(&current)?;
+        return Ok(0);
+    }
+    match current {
         Some(v) => println!("{}", fmt_account(&v)),
         None => println!("No active account."),
     }
-    Ok(())
+    Ok(0)
 }
 
 fn cmd_run(args: Arguments) -> CliResult<i32> {
@@ -339,32 +370,6 @@ fn cmd_remove(mut args: Arguments) -> CliResult<()> {
     Ok(())
 }
 
-fn cmd_import(mut args: Arguments) -> CliResult<()> {
-    let alias_opt: Option<String> = args.opt_value_from_str("--alias")?;
-    let Some(src) = positionals(
-        args,
-        1,
-        "codex-buddy import <auth.json path> [--alias <name>]",
-    )?
-    .into_iter()
-    .next()
-    .map(PathBuf::from) else {
-        return usage_err("import needs a path to an auth.json");
-    };
-    let paths = Paths::from_env()?;
-    let alias = match alias_opt {
-        Some(a) => a,
-        None => {
-            let info = auth::load_auth_info(&src)?;
-            let suggested = suggest_alias(info.email.as_deref());
-            prompt_with_default("Alias for this account", &suggested)?
-        }
-    };
-    ops::import(&paths, &src, &alias)?;
-    println!("Imported account '{alias}'.");
-    Ok(())
-}
-
 fn cmd_relogin(args: Arguments) -> CliResult<()> {
     let Some(alias) = positionals(args, 1, "codex-buddy relogin <alias>")?
         .into_iter()
@@ -379,23 +384,41 @@ fn cmd_relogin(args: Arguments) -> CliResult<()> {
     Ok(())
 }
 
-fn cmd_doctor(args: Arguments) -> CliResult<i32> {
+fn cmd_doctor(mut args: Arguments) -> CliResult<i32> {
+    let json = args.contains("--json");
     positionals(args, 0, "codex-buddy doctor")?;
     let paths = Paths::from_env()?;
     let checks = doctor::diagnose(&paths);
+    if json {
+        output::print_json(&checks)?;
+        return Ok(
+            if checks
+                .iter()
+                .any(|check| check.level == doctor::Level::Fail)
+            {
+                1
+            } else {
+                0
+            },
+        );
+    }
     let mut has_fail = false;
     for c in &checks {
-        let tag = match c.level {
-            doctor::Level::Pass => "ok  ",
-            doctor::Level::Warn => "warn",
-            doctor::Level::Fail => "fail",
-        };
-        println!("[{tag}] {}", c.message);
+        print_check(c);
         if c.level == doctor::Level::Fail {
             has_fail = true;
         }
     }
     Ok(if has_fail { 1 } else { 0 })
+}
+
+fn print_check(check: &doctor::Check) {
+    let tag = match check.level {
+        doctor::Level::Pass => "ok  ",
+        doctor::Level::Warn => "warn",
+        doctor::Level::Fail => "fail",
+    };
+    println!("[{tag}] {}", check.message);
 }
 
 fn cmd_path(args: Arguments) -> CliResult<()> {
@@ -426,14 +449,27 @@ fn fmt_window(u: &Option<usage::Usage>, mins: i64, now: i64) -> String {
         return "-".to_string();
     };
     match u.windows.iter().find(|w| w.window_minutes == mins) {
-        Some(w) if !w.is_expired(now) => {
-            let used = w.used_percent.clamp(0.0, 100.0);
-            match w.resets_at {
-                Some(r) => format!("{used:.0}% ({})", fmt_duration(r - now)),
-                None => format!("{used:.0}%"),
-            }
-        }
+        Some(w) if !w.is_expired(now) => fmt_window_value(w.used_percent, w.resets_at, now),
         _ => "-".to_string(),
+    }
+}
+
+fn fmt_window_value(used_percent: f64, resets_at: Option<i64>, now: i64) -> String {
+    let used = used_percent.clamp(0.0, 100.0);
+    match resets_at {
+        Some(reset) => format!("{used:.0}% ({})", fmt_duration(reset - now)),
+        None => format!("{used:.0}%"),
+    }
+}
+
+/// Short name for a rate-limit window: `5h`, `1w`, then generic `3d` / `90m` fallbacks.
+fn fmt_window_label(minutes: i64) -> String {
+    match minutes {
+        usage::FIVE_HOUR_MINUTES => "5h".into(),
+        usage::WEEKLY_MINUTES => "1w".into(),
+        m if m % 1440 == 0 => format!("{}d", m / 1440),
+        m if m % 60 == 0 => format!("{}h", m / 60),
+        m => format!("{m}m"),
     }
 }
 
@@ -552,17 +588,21 @@ fn print_help() {
 Setup\n  \
 init [alias] [--yes]        adopt the current ~/.codex account\n  \
 add <alias>                 log in and adopt a new account\n  \
-import <path> [--alias a]   adopt an account from an existing auth.json\n  \
+import <path> [options]     import one auth.json or an <alias>/auth.json directory\n  \
+export <alias> <path>       export one auth.json (--force to overwrite)\n  \
 relogin <alias>             re-login an existing account\n  \
 rename <old> <new>          rename an account\n  \
 remove <alias> [--yes]      remove an account\n\n\
 Use\n  \
-list                        list accounts with usage\n  \
-current                     show the active account\n  \
-switch <alias> | -          switch account (- = previous)\n  \
+list [--json]               list accounts with usage\n  \
+current [--json]            show the active account\n  \
+usage [alias] [options]     show usage; --remote fetches live via codex\n  \
+recommend [options]         recommend from comparable usage windows\n  \
+switch <alias> | - | --next switch account (- = previous)\n  \
 run <alias> -- <args>       run codex under an account (parallel)\n  \
 path <alias>                print an account's CODEX_HOME\n  \
-doctor                      check setup health\n\n  \
+doctor [--json]             check setup health\n  \
+report [--json]             summarize accounts and health\n\n  \
 -h, --help                  show this help\n  \
 -V, --version               show the version"
     );

@@ -78,6 +78,13 @@ pub struct Account {
     pub last_used_at: Option<i64>,
 }
 
+/// One account's live usage as reported by codex itself.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RemoteUsage {
+    pub windows: Vec<UsageWindow>,
+    pub plan: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, uniffi::Enum)]
 pub enum CheckLevel {
     Pass,
@@ -152,6 +159,18 @@ pub fn account_home(alias: String) -> Result<String, FfiError> {
         .into_owned())
 }
 
+/// Live usage for one account, fetched by running `codex app-server` under the account's
+/// CODEX_HOME. Blocks for up to ~30s on a slow network — call from a background thread.
+#[uniffi::export]
+pub fn fetch_remote_usage(alias: String) -> Result<RemoteUsage, FfiError> {
+    let paths = Paths::from_env()?;
+    let remote = codex_buddy_core::remote::fetch_account(&paths, &alias)?;
+    Ok(RemoteUsage {
+        windows: to_usage_windows(remote.usage, registry::now_epoch()),
+        plan: remote.plan,
+    })
+}
+
 #[uniffi::export]
 pub fn doctor() -> Result<Vec<DoctorCheck>, FfiError> {
     let paths = Paths::from_env()?;
@@ -164,20 +183,9 @@ pub fn doctor() -> Result<Vec<DoctorCheck>, FfiError> {
 fn to_account(v: AccountView, running: &BTreeSet<String>, now: i64) -> Account {
     Account {
         is_running: running.contains(&v.alias),
-        // Drop expired windows: the same validity rule the CLI applies before display.
         usage: v
             .usage
-            .map(|u| {
-                u.windows
-                    .into_iter()
-                    .filter(|w| !w.is_expired(now))
-                    .map(|w| UsageWindow {
-                        window_minutes: w.window_minutes,
-                        used_percent: w.used_percent,
-                        resets_at: w.resets_at,
-                    })
-                    .collect()
-            })
+            .map(|u| to_usage_windows(u, now))
             .unwrap_or_default(),
         alias: v.alias,
         email: v.email,
@@ -185,6 +193,20 @@ fn to_account(v: AccountView, running: &BTreeSet<String>, now: i64) -> Account {
         is_active: v.is_active,
         last_used_at: v.last_used_at,
     }
+}
+
+/// Drop expired windows: the same validity rule the CLI applies before display.
+fn to_usage_windows(usage: codex_buddy_core::usage::Usage, now: i64) -> Vec<UsageWindow> {
+    usage
+        .windows
+        .into_iter()
+        .filter(|w| !w.is_expired(now))
+        .map(|w| UsageWindow {
+            window_minutes: w.window_minutes,
+            used_percent: w.used_percent,
+            resets_at: w.resets_at,
+        })
+        .collect()
 }
 
 fn to_doctor_check(c: doctor::Check) -> DoctorCheck {

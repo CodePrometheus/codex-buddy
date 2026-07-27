@@ -17,6 +17,12 @@ enum Theme {
     static let accentInk = dynamic(light: 0xFFFFFF, dark: 0x3A1620)
     static let accentSoft = dynamic(light: 0xB2596A, dark: 0xE6A6AF, lightAlpha: 0.16, darkAlpha: 0.22)
 
+    /// Active-row treatment: a wash light enough to keep the row's text colors intact, with a
+    /// hairline of accent for definition — softer than `accentSoft`, which reads heavy across a
+    /// full row.
+    static let rowActive = dynamic(light: 0xB2596A, dark: 0xE6A6AF, lightAlpha: 0.10, darkAlpha: 0.15)
+    static let rowActiveBorder = dynamic(light: 0xB2596A, dark: 0xE6A6AF, lightAlpha: 0.28, darkAlpha: 0.36)
+
     /// Wordmark-only letter color. Deliberately not `ink`: in light mode the letters run warm
     /// (berry brown) so they sit in the same family as the pink `>_` gradient below, where the
     /// neutral-cool `ink` read as hard against it.

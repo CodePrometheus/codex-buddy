@@ -24,9 +24,11 @@ move or delete auth.json and break the scheme). `config_check` enforces this.
 ## Layout
 
 - `crates/core` — all logic, no CLI or interactive IO. Modules: `paths`, `error`, `auth`,
-  `registry`, `layout`, `config_check`, `init`, `ops`, `doctor`, `usage`, `running`. Unit tests
-  live in `src/<module>/tests.rs`.
-- `crates/cli` — arg parsing (pico-args), prompts, output; delegates everything to core.
+  `registry`, `layout`, `config_check`, `init`, `ops`, `doctor`, `usage`, `recommend`, `transfer`,
+  `remote`, `running`. Unit tests live in `src/<module>/tests.rs`.
+- `crates/cli` — arg parsing (pico-args), prompts, output; delegates everything to core. New
+  command families live under `src/commands/`, while reusable JSON/output DTOs live in
+  `src/output.rs`; keep `main.rs` focused on dispatch and shared presentation.
 - `crates/ffi` — uniffi bindings over `core` for the Swift tray (`list_accounts`, `switchAccount`,
   `addAccount`, ...). Thin: no business logic, just type conversion. `core` and `cli` stay free of
   any FFI dependency.
@@ -47,6 +49,13 @@ move or delete auth.json and break the scheme). `config_check` enforces this.
   crypto / chrono. JWTs are decoded, never verified. The release profile is size-optimized. The
   one exception is `uniffi` in `crates/ffi`/`crates/ffi-bindgen` — required to bridge to Swift;
   `core` and `cli` are still zero-FFI and unaffected.
+- Hard network rule: codex-buddy never talks to any backend itself — no HTTP code anywhere, and
+  the stored tokens are never used to call an API directly. The only remote-data path is the
+  `remote` module driving the local `codex app-server` over stdio, letting codex make its own
+  request with its own auth and refresh. Remote fetching stays strictly opt-in (`--remote`, the
+  tray's live-usage toggle); every default path is fully local. One deliberate exception: the
+  tray's user-triggered "Check for Updates" GETs GitHub's release metadata — unauthenticated,
+  nothing sent. The token/backend part of the rule has no exceptions.
 - Writes are atomic: the registry via temp-file + rename under a file lock; symlink repointing via
   temp symlink + rename. `init` is the only operation that touches existing `~/.codex` data, and
   it is reversible (timestamped backup + rollback on any failure).

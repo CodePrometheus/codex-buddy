@@ -96,6 +96,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         about.target = self
         menu.addItem(about)
 
+        let updates = NSMenuItem(
+            title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: ""
+        )
+        updates.target = self
+        menu.addItem(updates)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: "Quit codex-buddy", action: #selector(quit), keyEquivalent: "q")
@@ -108,6 +114,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAbout() {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [:])
+    }
+
+    /// The one network call the app makes itself: a user-triggered, unauthenticated GET for the
+    /// latest release tag. No tokens involved, nothing sent — the backend/token rule is untouched.
+    @objc private func checkForUpdates() {
+        var request = URLRequest(
+            url: URL(string: "https://api.github.com/repos/CodePrometheus/codex-buddy/releases/latest")!
+        )
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            let latest = data.flatMap(Self.releaseTag)
+            DispatchQueue.main.async {
+                self.presentUpdateResult(latest: latest, failure: error?.localizedDescription)
+            }
+        }.resume()
+    }
+
+    private nonisolated static func releaseTag(_ data: Data) -> String? {
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        guard let tag = json?["tag_name"] as? String else { return nil }
+        return tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+    }
+
+    private func presentUpdateResult(latest: String?, failure: String?) {
+        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        let alert = NSAlert()
+        if let latest, VersionCompare.isNewer(latest, than: current) {
+            alert.messageText = "Update available"
+            alert.informativeText = "codex-buddy \(latest) is out; you have \(current)."
+            alert.addButton(withTitle: "Download")
+            alert.addButton(withTitle: "Later")
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(
+                    URL(string: "https://github.com/CodePrometheus/codex-buddy/releases/latest")!
+                )
+            }
+            return
+        }
+        if latest != nil {
+            alert.messageText = "You're up to date"
+            alert.informativeText = "codex-buddy \(current) is the latest version."
+        } else {
+            alert.messageText = "Could not check for updates"
+            alert.informativeText = failure ?? "Unexpected response from GitHub."
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     @objc private func quit() {
@@ -132,6 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showPanel() {
         store.refresh()
         store.refreshDoctor()
+        store.refreshLiveUsage()
 
         let window = panelWindow ?? makePanelWindow()
         let size = window.contentView?.fittingSize ?? NSSize(width: Theme.panelWidth, height: 500)
@@ -182,6 +237,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         image.size = size
         image.isTemplate = true
         return image
+    }
+}
+
+/// Dotted-version comparison for the update check; missing components count as zero.
+enum VersionCompare {
+    static func isNewer(_ candidate: String, than current: String) -> Bool {
+        let a = candidate.split(separator: ".").map { Int($0) ?? 0 }
+        let b = current.split(separator: ".").map { Int($0) ?? 0 }
+        for i in 0..<max(a.count, b.count) {
+            let x = i < a.count ? a[i] : 0
+            let y = i < b.count ? b[i] : 0
+            if x != y { return x > y }
+        }
+        return false
     }
 }
 

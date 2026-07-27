@@ -4,10 +4,11 @@ use std::io::{Read, Seek, SeekFrom};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use serde_json::Value;
 
 /// One rate-limit window (e.g. the 5h or weekly window).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Window {
     pub window_minutes: i64,
     pub used_percent: f64,
@@ -23,7 +24,7 @@ impl Window {
 }
 
 /// A usage snapshot: the newest state of each window (typically 5h + weekly).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Usage {
     pub windows: Vec<Window>,
 }

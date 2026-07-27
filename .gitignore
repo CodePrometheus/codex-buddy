@@ -138,3 +138,7 @@ apps/tray/build/
 apps/tray/CodexBuddyFFI.xcframework/
 apps/tray/Sources/CodexBuddyFFI/
 apps/tray/.xcframework-slice/
+
+# Local agent notes: only .agents/skills/ is repository content
+.agents/*
+!.agents/skills/

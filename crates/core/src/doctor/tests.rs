@@ -48,3 +48,17 @@ fn no_accounts_warns() {
     let checks = diagnose(&paths);
     assert!(checks.iter().any(|c| c.level == Level::Warn));
 }
+
+#[test]
+fn report_counts_checks_and_exposes_stable_codes() {
+    let d = tempdir().unwrap();
+    let paths = init_a(d.path());
+    let report = report(&paths);
+    assert_eq!(report.account_count, 1);
+    assert_eq!(report.active_account.as_deref(), Some("a"));
+    assert_eq!(
+        report.pass_count + report.warn_count + report.fail_count,
+        report.checks.len()
+    );
+    assert!(report.checks.iter().all(|check| !check.code.is_empty()));
+}

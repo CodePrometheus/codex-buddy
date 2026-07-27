@@ -35,7 +35,7 @@ struct TrayPanel: View {
 
     private var mainContent: some View {
         VStack(spacing: 0) {
-            HeaderView(doctorChecks: store.doctorChecks, appearance: appearance) {
+            HeaderView(doctorChecks: store.doctorChecks, store: store, appearance: appearance) {
                 withAnimation(.easeOut(duration: 0.2)) { showDoctor = true }
             }
 
@@ -45,7 +45,7 @@ struct TrayPanel: View {
             }
 
             ScrollView {
-                VStack(spacing: 4) {
+                VStack(spacing: 6) {
                     HStack {
                         Text("ACCOUNTS")
                             .font(.system(size: 10.5, weight: .semibold))
