@@ -4,6 +4,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 use serde::Serialize;
 
@@ -14,49 +15,143 @@ use crate::layout::{build_account_dir, point_switched_entries};
 use crate::paths::{Paths, validate_alias};
 use crate::registry::{self, AccountRecord, Registry, now_epoch};
 
-/// A `Command` for the `codex` binary, with `PATH` widened to the user's login shell if `codex`
-/// isn't already reachable through the inherited one.
+/// Where `codex` was found, plus the `PATH` its process should inherit — npm-style launchers
+/// re-resolve `node` and friends through `PATH`, so the absolute program path alone is not enough.
+struct CodexLocation {
+    program: PathBuf,
+    path_var: Option<OsString>,
+}
+
+/// A `Command` for the `codex` binary.
 ///
-/// A GUI app launched from Finder/Dock (as the tray will be) only inherits the bare system
-/// `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — none of the Homebrew/nvm/asdf directories a
-/// terminal session picks up from shell profile files. `codex-buddy` itself runs fine either
-/// way; it's specifically this child process that needs the fuller PATH to find `codex`.
+/// A GUI app launched from Finder/Dock (as the tray is) only inherits the bare system `PATH`,
+/// and version managers (nvm/volta/asdf) often extend `PATH` only in interactive rc files that
+/// login shells never read. Resolution therefore walks a ladder — inherited `PATH`, login shell
+/// `PATH`, interactive shell `PATH`, well-known install directories — and caches the answer for
+/// the process lifetime. When nothing is found the bare name is used, so callers see a plain
+/// not-found spawn error they can translate for the user.
 pub(crate) fn codex_command() -> Command {
-    let mut cmd = Command::new("codex");
-    if !is_on_path("codex")
-        && let Some(path) = login_shell_path()
-    {
-        cmd.env("PATH", path);
+    static LOCATION: OnceLock<Option<CodexLocation>> = OnceLock::new();
+    match LOCATION.get_or_init(find_codex) {
+        Some(location) => {
+            let mut cmd = Command::new(&location.program);
+            if let Some(path) = &location.path_var {
+                cmd.env("PATH", path);
+            }
+            cmd
+        }
+        None => Command::new("codex"),
     }
-    cmd
 }
 
-fn is_on_path(bin: &str) -> bool {
-    is_on(bin, &env::var_os("PATH").unwrap_or_default())
+/// Translate a `codex` spawn failure into something a user can act on.
+pub(crate) fn codex_spawn_error(e: std::io::Error) -> Error {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        Error::Other("codex CLI not found; install codex and try again".into())
+    } else {
+        Error::Io(e)
+    }
 }
 
-fn is_on(bin: &str, path_var: &OsStr) -> bool {
-    env::split_paths(path_var).any(|dir| dir.join(bin).is_file())
+fn find_codex() -> Option<CodexLocation> {
+    let current = env::var_os("PATH").unwrap_or_default();
+    if let Some(program) = search_path_var(&current) {
+        return Some(CodexLocation {
+            program,
+            path_var: None,
+        });
+    }
+    for interactive in [false, true] {
+        if let Some(shell_path) = shell_path_var(interactive) {
+            let merged = merge_paths(&shell_path, &current);
+            if let Some(program) = search_path_var(&merged) {
+                return Some(CodexLocation {
+                    program,
+                    path_var: Some(merged),
+                });
+            }
+        }
+    }
+    let dir = known_install_dirs()
+        .into_iter()
+        .find(|dir| dir.join("codex").is_file())?;
+    Some(CodexLocation {
+        program: dir.join("codex"),
+        path_var: Some(merge_paths(dir.as_os_str(), &current)),
+    })
 }
 
-/// The `PATH` a login shell would compute (sourcing `.zprofile`/`.profile` etc.), prepended to
-/// the current one. None if the shell can't be run or reports nothing.
-fn login_shell_path() -> Option<String> {
+fn search_path_var(path_var: &OsStr) -> Option<PathBuf> {
+    env::split_paths(path_var)
+        .map(|dir| dir.join("codex"))
+        .find(|candidate| candidate.is_file())
+}
+
+fn merge_paths(front: &OsStr, back: &OsStr) -> OsString {
+    let mut merged = front.to_os_string();
+    if !back.is_empty() {
+        merged.push(":");
+        merged.push(back);
+    }
+    merged
+}
+
+/// The `PATH` the user's shell computes. Interactive startup files may print their own output
+/// (themes, banners), so the value is emitted after a marker byte and everything before the
+/// last marker is discarded.
+fn shell_path_var(interactive: bool) -> Option<OsString> {
     let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let flag = if interactive { "-lic" } else { "-lc" };
     let output = Command::new(&shell)
-        .args(["-lc", "echo -n \"$PATH\""])
+        .args([flag, r#"printf '\037%s' "$PATH""#])
+        .stdin(std::process::Stdio::null())
         .output()
         .ok()?;
     if !output.status.success() {
         return None;
     }
-    let shell_path = String::from_utf8(output.stdout).ok()?;
-    let shell_path = shell_path.trim();
-    if shell_path.is_empty() {
-        return None;
+    let marker = output.stdout.iter().rposition(|&b| b == 0x1f)?;
+    let bytes = output.stdout[marker + 1..].to_vec();
+    use std::os::unix::ffi::OsStringExt;
+    (!bytes.is_empty()).then(|| OsString::from_vec(bytes))
+}
+
+fn known_install_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+    ];
+    if let Some(home) = env::var_os("HOME").map(PathBuf::from) {
+        dirs.push(home.join(".local/bin"));
+        dirs.push(home.join(".volta/bin"));
+        dirs.push(home.join(".bun/bin"));
+        dirs.extend(nvm_bin_dirs(&home.join(".nvm/versions/node")));
     }
-    let current = env::var("PATH").unwrap_or_default();
-    Some(format!("{shell_path}:{current}"))
+    dirs
+}
+
+/// nvm keeps one bin dir per node version; try the newest first.
+fn nvm_bin_dirs(versions: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(versions) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<PathBuf> = entries.flatten().map(|e| e.path().join("bin")).collect();
+    dirs.sort_by_key(|dir| std::cmp::Reverse(nvm_version_key(dir)));
+    dirs
+}
+
+fn nvm_version_key(bin_dir: &Path) -> Vec<i64> {
+    bin_dir
+        .parent()
+        .and_then(|version| version.file_name())
+        .and_then(|name| name.to_str())
+        .map(|name| {
+            name.trim_start_matches('v')
+                .split('.')
+                .map(|part| part.parse().unwrap_or(0))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Look up an account and return its validated dir name. `dir` normally equals the alias, but
@@ -171,7 +266,8 @@ pub fn run(paths: &Paths, alias: &str, args: &[OsString]) -> Result<i32> {
     let status = codex_command()
         .env("CODEX_HOME", paths.account_dir(&dir))
         .args(args)
-        .status()?;
+        .status()
+        .map_err(codex_spawn_error)?;
     Ok(status.code().unwrap_or(1))
 }
 
@@ -245,7 +341,8 @@ pub fn add(paths: &Paths, alias: &str) -> Result<()> {
     let status = codex_command()
         .env("CODEX_HOME", &account_dir)
         .arg("login")
-        .status()?;
+        .status()
+        .map_err(codex_spawn_error)?;
     if !status.success() {
         let _ = fs::remove_dir_all(&account_dir);
         return Err(Error::Other(
@@ -373,7 +470,8 @@ pub fn relogin(paths: &Paths, alias: &str) -> Result<()> {
     let status = codex_command()
         .env("CODEX_HOME", paths.account_dir(&dir))
         .arg("login")
-        .status()?;
+        .status()
+        .map_err(codex_spawn_error)?;
     if !status.success() {
         return Err(Error::Other("codex login did not succeed".into()));
     }

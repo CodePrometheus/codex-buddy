@@ -83,7 +83,8 @@ final class AccountStore: ObservableObject {
             for await (alias, result) in group {
                 switch result {
                 case .success(let usage): fetched[alias] = usage.windows
-                case .failure(let error): failure = "Live usage for \(alias): \(error)"
+                case .failure(let error):
+                    failure = "Live usage for \(alias): \(friendlyMessage(error))"
                 }
             }
             return (fetched, failure)
@@ -136,7 +137,7 @@ final class AccountStore: ObservableObject {
                 try addAccount(alias: alias)
                 return nil
             } catch {
-                return "\(error)"
+                return friendlyMessage(error)
             }
         }.value
         guard let failure else {
@@ -162,8 +163,21 @@ final class AccountStore: ObservableObject {
             onSuccess(value)
             return true
         } catch {
-            lastError = "\(error)"
+            lastError = friendlyMessage(error)
             return false
         }
+    }
+}
+
+/// FfiError's payload is already a human sentence; the enum wrapper ("Failed(message: ...)") is
+/// debug noise in a toast.
+private func friendlyMessage(_ error: Error) -> String {
+    switch error {
+    case FfiError.NotFound(let message), FfiError.AlreadyExists(let message),
+        FfiError.NotInitialized(let message), FfiError.MissingAuth(let message),
+        FfiError.Failed(let message):
+        message
+    default:
+        error.localizedDescription
     }
 }

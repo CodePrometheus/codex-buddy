@@ -7,7 +7,9 @@ struct HeroView: View {
     let hue: Theme.AccountHue
 
     var body: some View {
-        HStack(alignment: .top, spacing: 18) {
+        // Center alignment: the ring column is taller than the identity block, and top-aligning
+        // left a dead band under the alias/email that read as a layout hole.
+        HStack(alignment: .center, spacing: 18) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 11) {
                     AvatarView(initial: account.initial, hue: hue, size: 40)

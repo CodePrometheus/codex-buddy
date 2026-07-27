@@ -361,18 +361,46 @@ fn switch_refuses_real_codex_auth() {
 }
 
 #[test]
-fn is_on_finds_a_binary_in_one_of_the_path_dirs() {
+fn search_path_var_finds_codex_in_one_of_the_path_dirs() {
     let d = tempdir().unwrap();
     let bin_dir = d.path().join("bin");
     fs::create_dir_all(&bin_dir).unwrap();
     fs::write(bin_dir.join("codex"), "#!/bin/sh\n").unwrap();
 
     let path_var = std::env::join_paths([d.path().join("empty"), bin_dir.clone()]).unwrap();
-    assert!(is_on("codex", &path_var));
-    assert!(!is_on("does-not-exist", &path_var));
+    assert_eq!(search_path_var(&path_var), Some(bin_dir.join("codex")));
+    assert_eq!(search_path_var(std::ffi::OsStr::new("")), None);
 }
 
 #[test]
-fn is_on_is_false_for_an_empty_path() {
-    assert!(!is_on("codex", std::ffi::OsStr::new("")));
+fn nvm_bin_dirs_prefer_the_newest_version_numerically() {
+    let d = tempdir().unwrap();
+    for version in ["v9.1.0", "v24.15.0", "v10.2.3"] {
+        fs::create_dir_all(d.path().join(version).join("bin")).unwrap();
+    }
+    let dirs = nvm_bin_dirs(d.path());
+    let names: Vec<String> = dirs
+        .iter()
+        .map(|dir| {
+            dir.parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert_eq!(names, ["v24.15.0", "v10.2.3", "v9.1.0"]);
+}
+
+#[test]
+fn codex_spawn_error_translates_not_found() {
+    let not_found = std::io::Error::from(std::io::ErrorKind::NotFound);
+    assert!(
+        codex_spawn_error(not_found)
+            .to_string()
+            .contains("codex CLI not found")
+    );
+    let other = std::io::Error::other("boom");
+    assert!(codex_spawn_error(other).to_string().contains("boom"));
 }

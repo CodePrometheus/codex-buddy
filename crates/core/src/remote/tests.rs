@@ -98,5 +98,5 @@ echo '{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"not logged in"}}
 #[test]
 fn a_missing_binary_fails_with_context() {
     let error = fetch_with(Command::new("/nonexistent/codex"), Duration::from_secs(1)).unwrap_err();
-    assert!(error.to_string().contains("cannot run"), "{error}");
+    assert!(error.to_string().contains("codex CLI not found"), "{error}");
 }

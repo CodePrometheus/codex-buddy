@@ -42,7 +42,7 @@ fn fetch_with(mut cmd: Command, timeout: Duration) -> Result<RemoteUsage> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| Error::Other(format!("cannot run `codex app-server`: {e}")))?;
+        .map_err(ops::codex_spawn_error)?;
     let stdin = child.stdin.take().expect("stdin is piped");
     let stdout = child.stdout.take().expect("stdout is piped");
 
