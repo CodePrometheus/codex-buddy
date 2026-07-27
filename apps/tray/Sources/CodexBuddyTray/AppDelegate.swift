@@ -143,13 +143,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let latest, VersionCompare.isNewer(latest, than: current) {
             alert.messageText = "Update available"
             alert.informativeText = "codex-buddy \(latest) is out; you have \(current)."
-            alert.addButton(withTitle: "Download")
+            alert.addButton(withTitle: "Install Update")
             alert.addButton(withTitle: "Later")
             NSApp.activate(ignoringOtherApps: true)
             if alert.runModal() == .alertFirstButtonReturn {
-                NSWorkspace.shared.open(
-                    URL(string: "https://github.com/CodePrometheus/codex-buddy/releases/latest")!
-                )
+                installUpdate(version: latest)
             }
             return
         }
@@ -237,6 +235,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         image.size = size
         image.isTemplate = true
         return image
+    }
+
+    /// Download and swap in the new bundle; on success the app relaunches itself, on failure
+    /// the releases page stays available as the manual fallback.
+    private func installUpdate(version: String) {
+        UpdateInstaller.install(version: version) { result in
+            Task { @MainActor in
+                switch result {
+                case .success:
+                    UpdateInstaller.relaunch()
+                case .failure(let error):
+                    let alert = NSAlert()
+                    alert.messageText = "Update failed"
+                    alert.informativeText = error.localizedDescription
+                    alert.addButton(withTitle: "Open Releases Page")
+                    alert.addButton(withTitle: "Cancel")
+                    NSApp.activate(ignoringOtherApps: true)
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        NSWorkspace.shared.open(
+                            URL(
+                                string:
+                                    "https://github.com/CodePrometheus/codex-buddy/releases/latest"
+                            )!
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
