@@ -160,7 +160,7 @@ pub fn account_home(alias: String) -> Result<String, FfiError> {
 }
 
 /// Live usage for one account, fetched by running `codex app-server` under the account's
-/// CODEX_HOME. Blocks for up to ~30s on a slow network — call from a background thread.
+/// CODEX_HOME. Blocks for up to ~15s on a slow network — call from a background thread.
 #[uniffi::export]
 pub fn fetch_remote_usage(alias: String) -> Result<RemoteUsage, FfiError> {
     let paths = Paths::from_env()?;

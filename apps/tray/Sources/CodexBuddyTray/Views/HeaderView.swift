@@ -28,8 +28,10 @@ struct HeaderView: View {
     private var liveUsageToggle: some View {
         Menu {
             Toggle("Live usage via codex", isOn: $store.liveUsageEnabled)
-            Button("Refresh now") { store.refreshLiveUsage(force: true) }
-                .disabled(!store.liveUsageEnabled || store.liveRefreshInFlight)
+            Button(store.liveRefreshInFlight ? "Refreshing…" : "Refresh now") {
+                store.refreshLiveUsage(force: true)
+            }
+            .disabled(!store.liveUsageEnabled || store.liveRefreshInFlight)
         } label: {
             Image(systemName: store.liveUsageEnabled ? "bolt.fill" : "bolt")
                 .font(.system(size: 12, weight: .semibold))

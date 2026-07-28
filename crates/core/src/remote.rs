@@ -22,7 +22,9 @@ pub struct RemoteUsage {
     pub plan: Option<String>,
 }
 
-const TIMEOUT: Duration = Duration::from_secs(30);
+// Healthy round trips answer in a few seconds; long timeouts only stretch how long the UI's
+// refresh state stays busy when the network is flaky.
+const TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Fetch one account's live usage by running `codex app-server` with the account's dir as
 /// `CODEX_HOME` — the same scoping trick `run` uses, so any managed account works, active or not.
