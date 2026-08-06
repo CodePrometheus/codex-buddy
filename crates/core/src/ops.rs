@@ -325,6 +325,10 @@ fn view_of(paths: &Paths, rec: &AccountRecord, is_active: bool, with_usage: bool
             crate::usage::latest_usage(&paths.account_dir(&rec.dir).join("sessions"), now_epoch())
         })
         .flatten();
+    if let Some(usage) = &usage {
+        // Best-effort trend bookkeeping; a failed write must never break a listing.
+        let _ = crate::history::record(&paths.account_dir(&rec.dir), usage, now_epoch());
+    }
     AccountView {
         alias: rec.alias.clone(),
         email,

@@ -5,16 +5,23 @@ struct TrayPanel: View {
     @ObservedObject var appearance: AppearanceController
 
     @State private var showDoctor = false
+    @State private var showTrends = false
     @State private var toast: String?
     @State private var toastTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
             mainContent
-                .opacity(showDoctor ? 0 : 1)
+                .opacity(showDoctor || showTrends ? 0 : 1)
             if showDoctor {
                 DoctorSheet(checks: store.doctorChecks) {
                     withAnimation(.easeOut(duration: 0.2)) { showDoctor = false }
+                }
+                .transition(.move(edge: .trailing))
+            }
+            if showTrends {
+                TrendSheet(accounts: store.accounts, history: store.historyByAlias) {
+                    withAnimation(.easeOut(duration: 0.2)) { showTrends = false }
                 }
                 .transition(.move(edge: .trailing))
             }
@@ -40,8 +47,9 @@ struct TrayPanel: View {
             }
 
             if let active = store.activeAccount {
-                HeroView(account: active, hue: .forAlias(active.alias))
-                Divider().padding(.horizontal, 20)
+                HeroView(account: active, hue: .forAlias(active.alias)) {
+                    withAnimation(.easeOut(duration: 0.2)) { showTrends = true }
+                }
             }
 
             ScrollView {

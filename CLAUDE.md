@@ -24,8 +24,8 @@ move or delete auth.json and break the scheme). `config_check` enforces this.
 ## Layout
 
 - `crates/core` — all logic, no CLI or interactive IO. Modules: `paths`, `error`, `auth`,
-  `registry`, `layout`, `config_check`, `init`, `ops`, `doctor`, `usage`, `recommend`, `transfer`,
-  `remote`, `running`. Unit tests live in `src/<module>/tests.rs`.
+  `registry`, `layout`, `config_check`, `init`, `ops`, `doctor`, `usage`, `history`, `recommend`,
+  `transfer`, `remote`, `running`. Unit tests live in `src/<module>/tests.rs`.
 - `crates/cli` — arg parsing (pico-args), prompts, output; delegates everything to core. New
   command families live under `src/commands/`, while reusable JSON/output DTOs live in
   `src/output.rs`; keep `main.rs` focused on dispatch and shared presentation.

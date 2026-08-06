@@ -21,7 +21,9 @@ struct DoctorSheet: View {
                 Spacer()
                 Text("Doctor").font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Color.clear.frame(width: 40)
+                // Width-only balance for the Back button; the height must be pinned too —
+                // Color is greedy on both axes and would stretch the whole header bar.
+                Color.clear.frame(width: 40, height: 1)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)

@@ -32,7 +32,10 @@ pub fn fetch_account(paths: &Paths, alias: &str) -> Result<RemoteUsage> {
     let home = ops::account_home(paths, alias)?;
     let mut cmd = ops::codex_command();
     cmd.env("CODEX_HOME", &home);
-    fetch_with(cmd, TIMEOUT)
+    let remote = fetch_with(cmd, TIMEOUT)?;
+    // Live observations feed the same local trend history as session-derived ones.
+    let _ = crate::history::record(&home, &remote.usage, crate::registry::now_epoch());
+    Ok(remote)
 }
 
 /// Drive one `initialize` -> `account/rateLimits/read` round trip against `<cmd> app-server`,

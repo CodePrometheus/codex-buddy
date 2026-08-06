@@ -5,6 +5,7 @@ pub mod auth;
 pub mod config_check;
 pub mod doctor;
 pub mod error;
+pub mod history;
 pub mod init;
 pub mod layout;
 pub mod ops;

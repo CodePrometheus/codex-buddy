@@ -1,16 +1,17 @@
 import CodexBuddyFFI
 import SwiftUI
 
-/// The active account: identity and dual usage ring.
+/// The active account as a soft card washed in its identity hue — identity on the left, usage
+/// ring on the right, and the entry into the trends screen tucked under the identity. The card
+/// replaces a hard divider: the shape itself separates the hero from the list.
 struct HeroView: View {
     let account: Account
     let hue: Theme.AccountHue
+    var onOpenTrends: () -> Void = {}
 
     var body: some View {
-        // Center alignment: the ring column is taller than the identity block, and top-aligning
-        // left a dead band under the alias/email that read as a layout hole.
         HStack(alignment: .center, spacing: 18) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 11) {
                 HStack(spacing: 11) {
                     AvatarView(initial: account.initial, hue: hue, size: 40)
                     VStack(alignment: .leading, spacing: 2) {
@@ -26,17 +27,42 @@ struct HeroView: View {
                     }
                 }
 
+                trendsEntry
             }
 
             Spacer(minLength: 12)
 
             if !account.usage.isEmpty {
-                usageStat
+                Button(action: onOpenTrends) {
+                    usageStat
+                }
+                .buttonStyle(.plain)
+                .help("Usage trends")
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 16)
+        .padding(16)
+        .background(
+            hue.tint.opacity(0.45),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .padding(.horizontal, 14)
+        .padding(.bottom, 4)
+    }
+
+    private var trendsEntry: some View {
+        Button(action: onOpenTrends) {
+            HStack(spacing: 5) {
+                Image(systemName: "chart.bar.fill").font(.system(size: 9))
+                Text("Usage trends").font(.system(size: 10.5, weight: .medium))
+                Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+            }
+            .foregroundStyle(Theme.inkMuted)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Theme.chip, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     /// The ring carries the number: negative space around it is what makes the percentage read

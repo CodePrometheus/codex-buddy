@@ -8,6 +8,7 @@ struct AddAccountView: View {
     var onToast: (String) -> Void
 
     @State private var expanded = false
+    @State private var isHovering = false
     @State private var alias = ""
     @State private var isLoading = false
     @State private var loginTask: Task<Void, Never>?
@@ -21,6 +22,8 @@ struct AddAccountView: View {
         }
     }
 
+    /// The padding and content shape live inside the button label so the whole banner — icon,
+    /// text, and the empty space after them — is one hit target, matching the account rows.
     private var idleRow: some View {
         Button {
             expanded = true
@@ -34,11 +37,17 @@ struct AddAccountView: View {
                 Text("Add Account").font(.system(size: 12.5, weight: .medium))
                 Spacer()
             }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.rowCorner))
         }
         .buttonStyle(.plain)
         .foregroundStyle(Theme.inkMuted)
-        .padding(10)
-        .contentShape(RoundedRectangle(cornerRadius: Theme.rowCorner))
+        .background(
+            RoundedRectangle(cornerRadius: Theme.rowCorner, style: .continuous)
+                .fill(isHovering ? Theme.chip : .clear)
+        )
+        .onHover { isHovering = $0 }
     }
 
     private var form: some View {

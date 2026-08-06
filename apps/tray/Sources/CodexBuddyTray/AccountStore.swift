@@ -38,8 +38,20 @@ final class AccountStore: ObservableObject {
 
     var activeAccount: Account? { accounts.first(where: \.isActive) }
 
+    /// Every account's recorded samples for the past week, for the trends screen.
+    @Published private(set) var historyByAlias: [String: [UsagePoint]] = [:]
+
     func refresh() {
         run { try listAccounts() } onSuccess: { self.accounts = self.withLiveUsage($0) }
+        refreshHistories()
+    }
+
+    private func refreshHistories() {
+        let since = Int64(Date().timeIntervalSince1970) - 7 * 86_400
+        historyByAlias = Dictionary(
+            uniqueKeysWithValues: accounts.map { account in
+                (account.alias, (try? usageHistory(alias: account.alias, since: since)) ?? [])
+            })
     }
 
     /// Refetch live usage for every account, one `codex app-server` probe each, in parallel off
@@ -58,6 +70,8 @@ final class AccountStore: ObservableObject {
             lastLiveRefresh = Date()
             liveRefreshInFlight = false
             accounts = withLiveUsage(accounts)
+            // Live fetches append to the on-disk trend history; pick that up for the trends screen.
+            refreshHistories()
             if let failure { lastError = failure }
         }
     }

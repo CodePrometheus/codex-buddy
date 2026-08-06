@@ -2,7 +2,8 @@ import CodexBuddyFFI
 import SwiftUI
 
 /// "All good" only ever nudges — no issue means nothing to drill into. A real issue opens the
-/// detail sheet instead.
+/// detail sheet instead. An empty check set (not yet loaded, or the probe itself failed) renders
+/// nothing: absence of results is not health, and must never read as "All good".
 struct DoctorPill: View {
     let checks: [DoctorCheck]
     var onOpenDetail: () -> Void
@@ -17,6 +18,14 @@ struct DoctorPill: View {
     }
 
     var body: some View {
+        if checks.isEmpty {
+            EmptyView()
+        } else {
+            pill
+        }
+    }
+
+    private var pill: some View {
         Button {
             hasIssue ? onOpenDetail() : nudgeTap()
         } label: {

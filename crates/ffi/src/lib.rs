@@ -85,6 +85,14 @@ pub struct RemoteUsage {
     pub plan: Option<String>,
 }
 
+/// One historical usage observation, flattened to a point per window.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct UsagePoint {
+    pub ts: i64,
+    pub window_minutes: i64,
+    pub used_percent: f64,
+}
+
 #[derive(Debug, Clone, Copy, uniffi::Enum)]
 pub enum CheckLevel {
     Pass,
@@ -169,6 +177,24 @@ pub fn fetch_remote_usage(alias: String) -> Result<RemoteUsage, FfiError> {
         windows: to_usage_windows(remote.usage, registry::now_epoch()),
         plan: remote.plan,
     })
+}
+
+/// Locally recorded usage samples for one account since `since` (epoch seconds), oldest first.
+#[uniffi::export]
+pub fn usage_history(alias: String, since: i64) -> Result<Vec<UsagePoint>, FfiError> {
+    let paths = Paths::from_env()?;
+    let home = ops::account_home(&paths, &alias)?;
+    Ok(codex_buddy_core::history::load(&home, since)
+        .into_iter()
+        .flat_map(|sample| {
+            let ts = sample.ts;
+            sample.windows.into_iter().map(move |w| UsagePoint {
+                ts,
+                window_minutes: w.window_minutes,
+                used_percent: w.used_percent,
+            })
+        })
+        .collect())
 }
 
 #[uniffi::export]
